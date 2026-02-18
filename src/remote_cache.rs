@@ -28,6 +28,11 @@ impl HttpRemoteCache {
     }
 }
 
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use std::io::{Read, Write};
+
 impl RemoteCache for HttpRemoteCache {
     fn has(&self, hash: &str) -> Result<bool> {
         let url = format!("{}/cache/{}", self.base_url, hash);
@@ -37,11 +42,18 @@ impl RemoteCache for HttpRemoteCache {
 
     fn get(&self, hash: &str) -> Result<Option<Vec<u8>>> {
         let url = format!("{}/cache/{}", self.base_url, hash);
-        let resp = self.client.get(&url).send()?;
+        let mut resp = self.client.get(&url).send()?;
         
         if resp.status().is_success() {
-            let data = resp.bytes()?.to_vec();
-            Ok(Some(data))
+            let mut compressed_data = Vec::new();
+            resp.read_to_end(&mut compressed_data)?;
+            
+            // Decompress
+            let mut decoder = GzDecoder::new(&compressed_data[..]);
+            let mut decompressed_data = Vec::new();
+            decoder.read_to_end(&mut decompressed_data)?;
+            
+            Ok(Some(decompressed_data))
         } else if resp.status() == 404 {
             Ok(None)
         } else {
@@ -50,9 +62,21 @@ impl RemoteCache for HttpRemoteCache {
     }
 
     fn put(&self, hash: &str, data: &[u8]) -> Result<()> {
+        // Incremental Layer Update: check if exists before uploading
+        if self.has(hash)? {
+            println!("   (skip upload: remote already has {})", &hash[..8]);
+            return Ok(());
+        }
+
         let url = format!("{}/cache/{}", self.base_url, hash);
+        
+        // Build artifact compression
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(data)?;
+        let compressed_data = encoder.finish()?;
+
         let resp = self.client.put(&url)
-            .body(data.to_vec())
+            .body(compressed_data)
             .send()?;
             
         if !resp.status().is_success() {

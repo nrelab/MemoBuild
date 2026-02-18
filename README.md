@@ -276,9 +276,9 @@ for node in topological_order:
 - [x] Remote cache server (HTTP API)
 - [x] Distributed build caching
 - [x] Hybrid Cache (Local + Remote)
-- [ ] Build artifact compression
-- [ ] Layer deduplication
-- [ ] Incremental layer updates
+- [x] Build artifact compression (Gzip)
+- [x] Layer deduplication (Content-addressed)
+- [x] Incremental layer updates (Optimized uploads)
 
 ### Phase 3: Optimization 📋
 - [ ] Content-addressable storage
