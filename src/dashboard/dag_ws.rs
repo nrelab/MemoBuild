@@ -19,17 +19,17 @@ impl BuildObserver for BroadcastObserver {
     }
 }
 
-pub struct RemoteObserver<R: RemoteCache> {
-    remote: Arc<R>,
+pub struct RemoteObserver {
+    remote: Arc<dyn RemoteCache>,
 }
 
-impl<R: RemoteCache + 'static> RemoteObserver<R> {
-    pub fn new(remote: Arc<R>) -> Self {
+impl RemoteObserver {
+    pub fn new(remote: Arc<dyn RemoteCache>) -> Self {
         Self { remote }
     }
 }
 
-impl<R: RemoteCache + 'static> BuildObserver for RemoteObserver<R> {
+impl BuildObserver for RemoteObserver {
     fn on_event(&self, event: BuildEvent) {
         let remote = self.remote.clone();
         tokio::spawn(async move {

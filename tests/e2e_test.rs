@@ -201,8 +201,10 @@ async fn test_end_to_end_build_with_remote_cache() {
 
     // 5. Initialize Cache with Remote Support
     let remote_url = format!("http://127.0.0.1:{}", port);
-    let remote = remote_cache::HttpRemoteCache::new(remote_url);
-    let cache = Arc::new(cache::HybridCache::new(Some(remote)).unwrap());
+    let remote = Arc::new(remote_cache::HttpRemoteCache::new(remote_url));
+    let cache = Arc::new(
+        cache::HybridCache::new(Some(remote as Arc<dyn remote_cache::RemoteCache>)).unwrap(),
+    );
 
     // 6. Run First Build (Populate Cache)
     let dockerfile_content = "FROM alpine\nRUN echo 'hello world' > hello.txt";
@@ -227,8 +229,13 @@ async fn test_end_to_end_build_with_remote_cache() {
     core::detect_changes(&mut graph2);
     core::propagate_dirty(&mut graph2);
 
-    let remote2 = remote_cache::HttpRemoteCache::new(format!("http://127.0.0.1:{}", port));
-    let cache2 = Arc::new(cache::HybridCache::new(Some(remote2)).unwrap());
+    let remote2 = Arc::new(remote_cache::HttpRemoteCache::new(format!(
+        "http://127.0.0.1:{}",
+        port
+    )));
+    let cache2 = Arc::new(
+        cache::HybridCache::new(Some(remote2 as Arc<dyn remote_cache::RemoteCache>)).unwrap(),
+    );
 
     executor::execute_graph(&mut graph2, cache2.clone(), None, false)
         .await

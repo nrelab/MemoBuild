@@ -1,0 +1,40 @@
+🚀 MemoBuild Engine Starting...
+   🔑 Env Fingerprint: b18d9c1e
+📄 Parsing Dockerfile...
+   🔍 Dependency: base image alpine:3.18
+📊 Building DAG...
+🔍 Detecting changes (filesystem hashing)...
+   - From("alpine:3.18"):  -> 55981c1f
+   - Run("apk add --no-cache nodejs npm"):  -> c479fe12
+   - Workdir("/app"):  -> 5a5e0db7
+   - Copy("package.json", "."):  -> 7cd8a76d
+   - Run("npm install"):  -> 616568b2
+   - Copy("src", "./src"):  -> 2b33367d
+   - Run("npm run build"):  -> aacb1ba1
+   - Env("NODE_ENV", "production"):  -> e5291664
+   - Cmd("[\"npm\", \"start\"]"):  -> c229c78c
+🔄 Propagating dirty flags...
+🔑 Recomputing deterministic hashes...
+   9 dirty  |  0 cached
+🚀 Initiating smart prefetching for 9 nodes...
+🔒 Reproducible build mode enabled
+🚀 Starting incremental execution with 2 levels
+ Executing level 0: 1 nodes
+🔧 Executing 1 nodes sequentially
+⚡ Cache HIT: From("alpine:3.18") [1eca2a1d]
+ Executing level 1: 8 nodes
+⚡ Executing 8 nodes in parallel
+🔧 Rebuilding node: Run("apk add --no-cache nodejs npm")...
+📡 [RemoteExec] Dispatching node Run("apk add --no-cache nodejs npm") to build farm
+📡 [Client] Dispatching action to build farm: http://localhost:9000/execute
+⚡ Cache HIT: Workdir("/app") [bd4da64b]
+⚡ Cache HIT: Copy("package.json", ".") [6d8c216a]
+⚡ Cache HIT: Run("npm install") [db114aaf]
+⚡ Cache HIT: Copy("src", "./src") [1fbe5ce1]
+🔧 Rebuilding node: Run("npm run build")...
+📡 [RemoteExec] Dispatching node Run("npm run build") to build farm
+📡 [Client] Dispatching action to build farm: http://localhost:9000/execute
+⚡ Cache HIT: Env("NODE_ENV", "production") [db2abba9]
+⚡ Cache HIT: Cmd("[\"npm\", \"start\"]") [5a03dded]
+Error: Remote execution failed with exit code 127: add: apk: command not found
+

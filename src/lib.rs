@@ -2,14 +2,16 @@ pub mod cache;
 pub mod cache_utils;
 pub mod core;
 pub mod dashboard;
-pub mod env;
 pub mod docker;
+pub mod env;
 pub mod executor;
 pub mod export;
 pub mod git;
 pub mod graph;
 pub mod hasher;
 pub mod remote_cache;
+pub mod remote_exec;
+pub mod remote_router;
 pub mod reproducible;
 pub mod sandbox;
 

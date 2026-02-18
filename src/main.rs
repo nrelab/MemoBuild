@@ -1,5 +1,4 @@
-use memobuild::remote_cache::RemoteCache;
-use memobuild::{cache, core, docker, executor, export, remote_cache};
+use memobuild::{cache, core, docker, executor, export};
 
 #[cfg(feature = "server")]
 use memobuild::server;
@@ -117,6 +116,100 @@ spec:
         }
     }
 
+    // Support starting the execution scheduler: memobuild --scheduler --port 9000
+    if args.iter().any(|arg| arg == "--scheduler") {
+        #[cfg(feature = "remote-exec")]
+        {
+            let port = args
+                .iter()
+                .position(|arg| arg == "--port")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(9000);
+
+            let workers_raw = env::var("MEMOBUILD_WORKERS").unwrap_or_default();
+            let mut workers: Vec<Arc<dyn memobuild::remote_exec::RemoteExecutor>> = Vec::new();
+            for url in workers_raw.split(',') {
+                if !url.is_empty() {
+                    workers.push(Arc::new(
+                        memobuild::remote_exec::client::RemoteExecClient::new(url),
+                    ));
+                }
+            }
+
+            let strategy = match env::var("MEMOBUILD_STRATEGY").as_deref() {
+                Ok("DataLocality") => {
+                    memobuild::remote_exec::scheduler::SchedulingStrategy::DataLocality
+                }
+                Ok("Random") => memobuild::remote_exec::scheduler::SchedulingStrategy::Random,
+                _ => memobuild::remote_exec::scheduler::SchedulingStrategy::RoundRobin,
+            };
+
+            let scheduler = Arc::new(memobuild::remote_exec::scheduler::Scheduler::new(
+                workers, strategy,
+            ));
+            let server = memobuild::remote_exec::server::ExecutionServer::new(scheduler);
+            server.start(port).await?;
+            return Ok(());
+        }
+        #[cfg(not(feature = "remote-exec"))]
+        {
+            anyhow::bail!(
+                "Remote Execution feature not enabled. Rebuild with --features remote-exec"
+            );
+        }
+    }
+
+    // Support starting a worker node: memobuild --worker --port 9001
+    if args.iter().any(|arg| arg == "--worker") {
+        #[cfg(feature = "remote-exec")]
+        {
+            let port = args
+                .iter()
+                .position(|arg| arg == "--port")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(9001);
+
+            let worker_id =
+                env::var("MEMOBUILD_WORKER_ID").unwrap_or_else(|_| "worker-local".into());
+
+            // Worker needs a cache and sandbox
+            let cache = Arc::new(memobuild::cache::HybridCache::new(None)?);
+            let sandbox: Arc<dyn memobuild::sandbox::Sandbox> =
+                if args.iter().any(|arg| arg == "containerd") {
+                    #[cfg(feature = "containerd")]
+                    {
+                        Arc::new(
+                            memobuild::sandbox::containerd::ContainerdSandbox::new(
+                                "unix:///run/containerd/containerd.sock",
+                            )
+                            .await?,
+                        )
+                    }
+                    #[cfg(not(feature = "containerd"))]
+                    {
+                        anyhow::bail!("Containerd feature not enabled")
+                    }
+                } else {
+                    Arc::new(memobuild::sandbox::local::LocalSandbox)
+                };
+
+            let worker = Arc::new(memobuild::remote_exec::worker::WorkerNode::new(
+                &worker_id, cache, sandbox,
+            ));
+            let server = memobuild::remote_exec::worker_server::WorkerServer::new(worker);
+            server.start(port).await?;
+            return Ok(());
+        }
+        #[cfg(not(feature = "remote-exec"))]
+        {
+            anyhow::bail!(
+                "Remote Execution feature not enabled. Rebuild with --features remote-exec"
+            );
+        }
+    }
+
     println!("🚀 MemoBuild Engine Starting...");
 
     // 0. Collect Environment Fingerprint
@@ -124,16 +217,71 @@ spec:
     println!("   🔑 Env Fingerprint: {}", &env_fp.hash()[..8]);
 
     // 1. Initialize Cache
-    let remote_url = env::var("MEMOBUILD_REMOTE_URL").ok();
-    let remote_cache = remote_url.map(remote_cache::HttpRemoteCache::new);
+    let remote_cache: Option<Arc<dyn memobuild::remote_cache::RemoteCache>> =
+        if let Ok(regions_raw) = env::var("MEMOBUILD_REGIONS") {
+            // Multi-region Setup: MEMOBUILD_REGIONS="https://asia.cache=asia,https://us.cache=us"
+            let mut regions = Vec::new();
+            for pair in regions_raw.split(',') {
+                if let Some((url, name)) = pair.split_once('=') {
+                    let client = Arc::new(memobuild::remote_cache::HttpRemoteCache::new(
+                        url.to_string(),
+                    ));
+                    regions.push(Arc::new(memobuild::remote_router::RegionNode::new(
+                        name, url, client,
+                    )));
+                }
+            }
 
-    let observer = remote_cache.as_ref().map(|r| {
-        Arc::new(memobuild::dashboard::RemoteObserver::new(Arc::new(
-            r.clone(),
-        ))) as Arc<dyn memobuild::dashboard::BuildObserver>
-    });
+            if regions.is_empty() {
+                let remote_url = env::var("MEMOBUILD_REMOTE_URL").ok();
+                remote_url.map(|url| {
+                    Arc::new(memobuild::remote_cache::HttpRemoteCache::new(url))
+                        as Arc<dyn memobuild::remote_cache::RemoteCache>
+                })
+            } else {
+                println!(
+                    "🌐 Initializing Multi-Region Cache Router ({} regions)...",
+                    regions.len()
+                );
+                let router = Arc::new(memobuild::remote_router::CacheRouter::new(
+                    regions.clone(),
+                    memobuild::remote_router::RoutingStrategy::LowestLatency,
+                ));
 
-    let cache = Arc::new(cache::HybridCache::new(remote_cache)?);
+                // Start health monitoring in background
+                let regions_for_health = regions.clone();
+                tokio::spawn(async move {
+                    memobuild::remote_router::health::start_health_service(regions_for_health)
+                        .await;
+                });
+
+                Some(
+                    Arc::new(memobuild::remote_router::RouterRemoteCache { router })
+                        as Arc<dyn memobuild::remote_cache::RemoteCache>,
+                )
+            }
+        } else {
+            // Single Region Setup
+            let remote_url = env::var("MEMOBUILD_REMOTE_URL").ok();
+            remote_url.map(|url| {
+                Arc::new(memobuild::remote_cache::HttpRemoteCache::new(url))
+                    as Arc<dyn memobuild::remote_cache::RemoteCache>
+            })
+        };
+
+    let observer: Option<Arc<dyn memobuild::dashboard::BuildObserver>> =
+        remote_cache.as_ref().map(|r| {
+            let obs = memobuild::dashboard::RemoteObserver::new(Arc::clone(r));
+            Arc::new(obs) as Arc<dyn memobuild::dashboard::BuildObserver>
+        });
+
+    let remote_executor: Option<Arc<dyn memobuild::remote_exec::RemoteExecutor>> =
+        env::var("MEMOBUILD_REMOTE_EXEC").ok().map(|url| {
+            Arc::new(memobuild::remote_exec::client::RemoteExecClient::new(&url))
+                as Arc<dyn memobuild::remote_exec::RemoteExecutor>
+        });
+
+    let cache = Arc::new(cache::HybridCache::new_with_box(remote_cache)?);
 
     // 2. Prepare Dockerfile
     if !std::path::Path::new("Dockerfile").exists() {
@@ -221,15 +369,23 @@ spec:
     }
 
     let build_start = std::time::Instant::now();
-    
-    let mut executor = executor::IncrementalExecutor::new(cache.clone())
-        .with_reproducible(reproducible);
-    
+
+    let mut executor =
+        executor::IncrementalExecutor::new(cache.clone()).with_reproducible(reproducible);
+
     if let Some(obs) = observer {
         executor = executor.with_observer(obs);
     }
-    
-    if let Some(sandbox_type) = args.iter().position(|arg| arg == "--sandbox").and_then(|i| args.get(i + 1)) {
+
+    if let Some(exec) = remote_executor {
+        executor = executor.with_remote_executor(exec);
+    }
+
+    if let Some(sandbox_type) = args
+        .iter()
+        .position(|arg| arg == "--sandbox")
+        .and_then(|i| args.get(i + 1))
+    {
         match sandbox_type.as_str() {
             "containerd" => {
                 #[cfg(feature = "containerd")]
@@ -237,13 +393,15 @@ spec:
                     println!("🏗️  Using containerd sandbox runtime");
                     let sandbox = Arc::new(memobuild::sandbox::containerd::ContainerdSandbox::new(
                         "memobuild",
-                        "/run/containerd/containerd.sock"
+                        "/run/containerd/containerd.sock",
                     ));
                     executor = executor.with_sandbox(sandbox);
                 }
                 #[cfg(not(feature = "containerd"))]
                 {
-                    anyhow::bail!("Containerd feature not enabled. Rebuild with --features containerd");
+                    anyhow::bail!(
+                        "Containerd feature not enabled. Rebuild with --features containerd"
+                    );
                 }
             }
             "local" => {

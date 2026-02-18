@@ -1,11 +1,13 @@
-use anyhow::{Result, Context};
-use async_trait::async_trait;
 use crate::graph::Node;
-use crate::sandbox::{Sandbox, SandboxEnv, ExecResult, ResourceLimits};
-use containerd_client::with_namespace;
+use crate::sandbox::{ExecResult, ResourceLimits, Sandbox, SandboxEnv};
+use anyhow::{Context, Result};
+use async_trait::async_trait;
 use containerd_client::services::v1::containers_client::ContainersClient;
 use containerd_client::services::v1::tasks_client::TasksClient;
-use containerd_client::services::v1::{CreateContainerRequest, CreateTaskRequest, StartRequest, WaitRequest, DeleteContainerRequest};
+use containerd_client::services::v1::{
+    CreateContainerRequest, CreateTaskRequest, DeleteContainerRequest, StartRequest, WaitRequest,
+};
+use containerd_client::with_namespace;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -35,15 +37,15 @@ impl ContainerdSandbox {
 impl Sandbox for ContainerdSandbox {
     async fn prepare(&self, node: &Node) -> Result<SandboxEnv> {
         println!("🚀 [containerd] Preparing sandbox for node: {}", node.name);
-        
+
         // 1. In a real implementation, we would:
         //    - Pull the base image (e.g., from node.metadata.base_image)
         //    - Create a containerd snapshot (overlayfs)
         //    - Mount the snapshot to a temporary directory
-        
+
         let temp_dir = std::env::temp_dir().join(format!("memobuild-{}", node.hash));
         std::fs::create_dir_all(&temp_dir)?;
-        
+
         Ok(SandboxEnv {
             workspace_dir: temp_dir,
             env_vars: node.env.clone(),
@@ -53,11 +55,13 @@ impl Sandbox for ContainerdSandbox {
     async fn execute(&self, env: &SandboxEnv, node: &Node) -> Result<ExecResult> {
         let cmd = match &node.kind {
             crate::graph::NodeKind::Run => &node.content,
-            _ => return Ok(ExecResult {
-                exit_code: 0,
-                stdout: format!("Mock artifact for {}", node.name).into_bytes(),
-                stderr: vec![],
-            }),
+            _ => {
+                return Ok(ExecResult {
+                    exit_code: 0,
+                    stdout: format!("Mock artifact for {}", node.name).into_bytes(),
+                    stderr: vec![],
+                })
+            }
         };
 
         println!("⚡ [containerd] Executing: {}", cmd);
@@ -99,7 +103,7 @@ impl Sandbox for ContainerdSandbox {
 
         // Note: Real execution requires more steps (Task creation, Start, Wait)
         // This is a simplified logic flow for the Phase 6 MVP.
-        
+
         println!("🏗️  [containerd] Container created: {}", container_id);
 
         Ok(ExecResult {
@@ -110,7 +114,10 @@ impl Sandbox for ContainerdSandbox {
     }
 
     async fn cleanup(&self, env: &SandboxEnv) -> Result<()> {
-        println!("🧹 [containerd] Cleaning up sandbox at: {}", env.workspace_dir.display());
+        println!(
+            "🧹 [containerd] Cleaning up sandbox at: {}",
+            env.workspace_dir.display()
+        );
         if env.workspace_dir.exists() {
             let _ = std::fs::remove_dir_all(&env.workspace_dir);
         }

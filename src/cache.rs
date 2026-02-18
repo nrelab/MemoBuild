@@ -111,17 +111,21 @@ impl LocalCache {
     }
 }
 
-pub struct HybridCache<R: RemoteCache> {
+pub struct HybridCache {
     pub local: LocalCache,
-    pub remote: Option<R>,
+    pub remote: Option<Arc<dyn RemoteCache>>,
 }
 
-impl<R: RemoteCache + 'static> HybridCache<R> {
-    pub fn new(remote: Option<R>) -> Result<Self> {
+impl HybridCache {
+    pub fn new(remote: Option<Arc<dyn RemoteCache>>) -> Result<Self> {
         Ok(Self {
             local: LocalCache::new()?,
             remote,
         })
+    }
+
+    pub fn new_with_box(remote: Option<Arc<dyn RemoteCache>>) -> Result<Self> {
+        Self::new(remote)
     }
 
     pub async fn get_artifact(&self, key: &str) -> Result<Option<Vec<u8>>> {

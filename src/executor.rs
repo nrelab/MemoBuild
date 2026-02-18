@@ -1,17 +1,17 @@
 use crate::cache::HybridCache;
 use crate::graph::BuildGraph;
-use crate::remote_cache::RemoteCache;
 use anyhow::Result;
 use std::sync::Arc;
 use std::time::Instant;
 
 /// Incremental executor that supports parallel execution and selective rebuilds
-pub struct IncrementalExecutor<R: RemoteCache + 'static> {
-    cache: Arc<HybridCache<R>>,
+pub struct IncrementalExecutor {
+    cache: Arc<HybridCache>,
     execution_stats: ExecutionStats,
     observer: Option<Arc<dyn crate::dashboard::BuildObserver>>,
     reproducible: bool,
     sandbox: Arc<dyn crate::sandbox::Sandbox>,
+    remote_executor: Option<Arc<dyn crate::remote_exec::RemoteExecutor>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -24,15 +24,24 @@ pub struct ExecutionStats {
     pub total_execution_time_ms: u64,
 }
 
-impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
-    pub fn new(cache: Arc<HybridCache<R>>) -> Self {
+impl IncrementalExecutor {
+    pub fn new(cache: Arc<HybridCache>) -> Self {
         Self {
             cache,
             execution_stats: ExecutionStats::default(),
             observer: None,
             reproducible: false,
             sandbox: Arc::new(crate::sandbox::local::LocalSandbox),
+            remote_executor: None,
         }
+    }
+
+    pub fn with_remote_executor(
+        mut self,
+        exec: Arc<dyn crate::remote_exec::RemoteExecutor>,
+    ) -> Self {
+        self.remote_executor = Some(exec);
+        self
     }
 
     pub fn with_sandbox(mut self, sandbox: Arc<dyn crate::sandbox::Sandbox>) -> Self {
@@ -131,6 +140,7 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
             let cache = self.cache.clone();
             let observer = self.observer.clone();
             let sandbox = self.sandbox.clone();
+            let remote_executor = self.remote_executor.clone();
             let reproducible = self.reproducible;
 
             futures.push(async move {
@@ -150,6 +160,7 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
                     &kind,
                     reproducible,
                     sandbox,
+                    remote_executor,
                     &node,
                 )
                 .await;
@@ -226,6 +237,7 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
                 &node.kind,
                 self.reproducible,
                 self.sandbox.clone(),
+                self.remote_executor.clone(),
                 node,
             )
             .await;
@@ -270,7 +282,7 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
 
     #[allow(clippy::too_many_arguments)]
     async fn execute_node_logic(
-        cache: Arc<HybridCache<R>>,
+        cache: Arc<HybridCache>,
         _node_id: usize,
         name: &str,
         hash: &str,
@@ -278,6 +290,7 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
         _kind: &crate::graph::NodeKind,
         reproducible: bool,
         sandbox: Arc<dyn crate::sandbox::Sandbox>,
+        remote_executor: Option<Arc<dyn crate::remote_exec::RemoteExecutor>>,
         node: &crate::graph::Node,
     ) -> Result<(bool, bool)> {
         // 1. Check cache first
@@ -297,21 +310,49 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
             println!("🔨 Building clean node (not in cache): {}...", name);
         }
 
-        // Prepare sandbox
-        let env = sandbox.prepare(node).await?;
+        let mut artifact_data = if let Some(ref remote) = remote_executor {
+            println!("📡 [RemoteExec] Dispatching node {} to build farm", name);
+            let action = crate::remote_exec::ActionRequest {
+                command: vec!["/bin/sh".into(), "-c".into(), node.content.clone()],
+                env: node.env.clone(),
+                input_root_digest: crate::remote_exec::Digest {
+                    hash: hash.to_string(),
+                    size_bytes: 0, // Placeholder
+                },
+                timeout: std::time::Duration::from_secs(600),
+                platform_properties: std::collections::HashMap::new(),
+                output_files: Vec::new(),
+                output_directories: Vec::new(),
+            };
 
-        // Execute command
-        let exec_result = sandbox.execute(&env, node).await?;
+            let result = remote.execute(action).await?;
+            if result.exit_code != 0 {
+                anyhow::bail!(
+                    "Remote execution failed with exit code {}: {}",
+                    result.exit_code,
+                    String::from_utf8_lossy(&result.stderr_raw)
+                );
+            }
+            result.stdout_raw
+        } else {
+            // Prepare sandbox
+            let env = sandbox.prepare(node).await?;
 
-        if exec_result.exit_code != 0 {
-            anyhow::bail!(
-                "Command failed with exit code {}: {}",
-                exec_result.exit_code,
-                String::from_utf8_lossy(&exec_result.stderr)
-            );
-        }
+            // Execute command
+            let exec_result = sandbox.execute(&env, node).await?;
 
-        let mut artifact_data = exec_result.stdout;
+            if exec_result.exit_code != 0 {
+                anyhow::bail!(
+                    "Command failed with exit code {}: {}",
+                    exec_result.exit_code,
+                    String::from_utf8_lossy(&exec_result.stderr)
+                );
+            }
+
+            let data = exec_result.stdout;
+            sandbox.cleanup(&env).await?;
+            data
+        };
 
         if reproducible {
             artifact_data = crate::reproducible::normalize_artifact(artifact_data)?;
@@ -320,8 +361,6 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
         if let Err(e) = cache.put_artifact(hash, &artifact_data).await {
             eprintln!("⚠️ Cache put error for {}: {}", name, e);
         }
-
-        sandbox.cleanup(&env).await?;
 
         Ok((false, false))
     }
@@ -352,9 +391,9 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
 }
 
 /// Legacy function for backward compatibility
-pub async fn execute_graph<R: RemoteCache + 'static>(
+pub async fn execute_graph(
     graph: &mut BuildGraph,
-    cache: Arc<HybridCache<R>>,
+    cache: Arc<HybridCache>,
     observer: Option<Arc<dyn crate::dashboard::BuildObserver>>,
     reproducible: bool,
 ) -> Result<()> {

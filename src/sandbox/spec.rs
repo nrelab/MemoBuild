@@ -5,7 +5,11 @@ use std::path::Path;
 pub fn build_spec(cmd: &str, env: &HashMap<String, String>, rootfs: &Path) -> Spec {
     let process = ProcessBuilder::default()
         .args(vec!["/bin/sh".into(), "-c".into(), cmd.into()])
-        .env(env.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>())
+        .env(
+            env.iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>(),
+        )
         .cwd("/workspace")
         .terminal(false)
         .build()

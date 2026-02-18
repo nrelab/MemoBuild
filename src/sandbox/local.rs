@@ -1,7 +1,7 @@
+use crate::graph::Node;
+use crate::sandbox::{ExecResult, Sandbox, SandboxEnv};
 use anyhow::Result;
 use async_trait::async_trait;
-use crate::graph::Node;
-use crate::sandbox::{Sandbox, SandboxEnv, ExecResult};
 use std::process::Command;
 
 pub struct LocalSandbox;
@@ -11,7 +11,7 @@ impl Sandbox for LocalSandbox {
     async fn prepare(&self, node: &Node) -> Result<SandboxEnv> {
         // Local sandbox uses the current working directory but can isolate via temp dirs
         let workspace_dir = std::env::current_dir()?;
-        
+
         Ok(SandboxEnv {
             workspace_dir,
             env_vars: node.env.clone(),
