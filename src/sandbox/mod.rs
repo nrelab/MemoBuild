@@ -1,10 +1,25 @@
 use anyhow::Result;
 use crate::graph::Node;
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SandboxKind {
+    Local,
+    Containerd,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ResourceLimits {
+    pub cpu_shares: Option<u64>,
+    pub memory_mb: Option<u64>,
+}
 
 #[derive(Debug, Clone)]
 pub struct SandboxEnv {
     pub workspace_dir: std::path::PathBuf,
-    pub env_vars: std::collections::HashMap<String, String>,
+    pub env_vars: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -14,10 +29,14 @@ pub struct ExecResult {
     pub stderr: Vec<u8>,
 }
 
+#[async_trait]
 pub trait Sandbox: Send + Sync {
-    fn prepare(&self, node: &Node) -> Result<SandboxEnv>;
-    fn execute(&self, env: &SandboxEnv, node: &Node) -> Result<ExecResult>;
-    fn cleanup(&self, env: &SandboxEnv) -> Result<()>;
+    async fn prepare(&self, node: &Node) -> Result<SandboxEnv>;
+    async fn execute(&self, env: &SandboxEnv, node: &Node) -> Result<ExecResult>;
+    async fn cleanup(&self, env: &SandboxEnv) -> Result<()>;
 }
 
+#[cfg(feature = "containerd")]
+pub mod containerd;
 pub mod local;
+pub mod spec;

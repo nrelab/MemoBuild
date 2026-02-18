@@ -298,10 +298,10 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
         }
 
         // Prepare sandbox
-        let env = sandbox.prepare(node)?;
+        let env = sandbox.prepare(node).await?;
 
         // Execute command
-        let exec_result = sandbox.execute(&env, node)?;
+        let exec_result = sandbox.execute(&env, node).await?;
 
         if exec_result.exit_code != 0 {
             anyhow::bail!(
@@ -321,7 +321,7 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
             eprintln!("⚠️ Cache put error for {}: {}", name, e);
         }
 
-        sandbox.cleanup(&env)?;
+        sandbox.cleanup(&env).await?;
 
         Ok((false, false))
     }

@@ -1,12 +1,14 @@
 use anyhow::Result;
+use async_trait::async_trait;
 use crate::graph::Node;
 use crate::sandbox::{Sandbox, SandboxEnv, ExecResult};
 use std::process::Command;
 
 pub struct LocalSandbox;
 
+#[async_trait]
 impl Sandbox for LocalSandbox {
-    fn prepare(&self, node: &Node) -> Result<SandboxEnv> {
+    async fn prepare(&self, node: &Node) -> Result<SandboxEnv> {
         // Local sandbox uses the current working directory but can isolate via temp dirs
         let workspace_dir = std::env::current_dir()?;
         
@@ -16,7 +18,7 @@ impl Sandbox for LocalSandbox {
         })
     }
 
-    fn execute(&self, env: &SandboxEnv, node: &Node) -> Result<ExecResult> {
+    async fn execute(&self, env: &SandboxEnv, node: &Node) -> Result<ExecResult> {
         let cmd = match &node.kind {
             crate::graph::NodeKind::Run => &node.content,
             _ => {
@@ -52,7 +54,7 @@ impl Sandbox for LocalSandbox {
         })
     }
 
-    fn cleanup(&self, _env: &SandboxEnv) -> Result<()> {
+    async fn cleanup(&self, _env: &SandboxEnv) -> Result<()> {
         Ok(())
     }
 }

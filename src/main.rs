@@ -220,9 +220,42 @@ spec:
         println!("🔒 Reproducible build mode enabled");
     }
 
-    println!("⚡ Executing build... ");
     let build_start = std::time::Instant::now();
-    executor::execute_graph(&mut graph, cache.clone(), observer, reproducible).await?;
+    
+    let mut executor = executor::IncrementalExecutor::new(cache.clone())
+        .with_reproducible(reproducible);
+    
+    if let Some(obs) = observer {
+        executor = executor.with_observer(obs);
+    }
+    
+    if let Some(sandbox_type) = args.iter().position(|arg| arg == "--sandbox").and_then(|i| args.get(i + 1)) {
+        match sandbox_type.as_str() {
+            "containerd" => {
+                #[cfg(feature = "containerd")]
+                {
+                    println!("🏗️  Using containerd sandbox runtime");
+                    let sandbox = Arc::new(memobuild::sandbox::containerd::ContainerdSandbox::new(
+                        "memobuild",
+                        "/run/containerd/containerd.sock"
+                    ));
+                    executor = executor.with_sandbox(sandbox);
+                }
+                #[cfg(not(feature = "containerd"))]
+                {
+                    anyhow::bail!("Containerd feature not enabled. Rebuild with --features containerd");
+                }
+            }
+            "local" => {
+                println!("💻 Using local sandbox runtime");
+            }
+            _ => {
+                anyhow::bail!("Unknown sandbox type: {}", sandbox_type);
+            }
+        }
+    }
+
+    executor.execute(&mut graph).await?;
     let duration = build_start.elapsed();
 
     // 3. Report Analytics
