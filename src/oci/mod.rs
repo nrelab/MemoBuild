@@ -2,6 +2,7 @@ pub mod layer;
 pub mod config;
 pub mod manifest;
 pub mod utils;
+pub mod registry;
 
 use anyhow::Result;
 use std::fs;
@@ -9,7 +10,7 @@ use std::path::PathBuf;
 use crate::graph::BuildGraph;
 use crate::oci::manifest::{OCIManifest, OCIDescriptor, OCIIndex};
 
-pub fn export_image(graph: &BuildGraph, image_name: &str) -> Result<()> {
+pub fn export_image(graph: &BuildGraph, image_name: &str) -> Result<PathBuf> {
     let output_dir = PathBuf::from(".memobuild-output").join(image_name.replace(':', "-"));
     fs::create_dir_all(&output_dir)?;
     
@@ -66,5 +67,5 @@ pub fn export_image(graph: &BuildGraph, image_name: &str) -> Result<()> {
     fs::write(output_dir.join("oci-layout"), r#"{"imageLayoutVersion": "1.0.0"}"#)?;
     
     println!("✅ OCI Image exported to: {}", output_dir.display());
-    Ok(())
+    Ok(output_dir)
 }

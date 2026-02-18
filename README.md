@@ -284,11 +284,12 @@ for node in topological_order:
 - [x] Content-addressable storage (Integrity verification)
 - [x] Build cache garbage collection (GC)
 - [x] Parallel layer uploads & execution (Rayon)
+- [x] Build analytics (Performance tracking)
 - [ ] Smart prefetching
-- [ ] Build analytics
 
-### Phase 4: Integration 📋
-- [ ] Docker registry push/pull
+### Phase 4: Integration �
+- [x] Docker registry push (OCI Distribution Spec)
+- [ ] Docker registry pull
 - [ ] Kubernetes integration
 - [ ] CI/CD pipeline support
 - [ ] Build notifications

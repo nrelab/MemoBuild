@@ -12,6 +12,7 @@ pub trait RemoteCache: Send + Sync {
     fn has(&self, hash: &str) -> Result<bool>;
     fn get(&self, hash: &str) -> Result<Option<Vec<u8>>>;
     fn put(&self, hash: &str, data: &[u8]) -> Result<()>;
+    fn report_analytics(&self, dirty: u32, cached: u32, duration_ms: u64) -> Result<()>;
 }
 
 pub struct HttpRemoteCache {
@@ -81,6 +82,24 @@ impl RemoteCache for HttpRemoteCache {
             
         if !resp.status().is_success() {
             anyhow::bail!("Failed to upload to remote cache: {}", resp.status());
+        }
+        Ok(())
+    }
+
+    fn report_analytics(&self, dirty: u32, cached: u32, duration_ms: u64) -> Result<()> {
+        let url = format!("{}/analytics", self.base_url);
+        let data = serde_json::json!({
+            "dirty": dirty,
+            "cached": cached,
+            "duration_ms": duration_ms
+        });
+
+        let resp = self.client.post(&url)
+            .json(&data)
+            .send()?;
+
+        if !resp.status().is_success() {
+            eprintln!("Failed to report analytics: {}", resp.status());
         }
         Ok(())
     }

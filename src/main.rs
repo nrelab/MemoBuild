@@ -74,10 +74,29 @@ async fn main() -> Result<()> {
     println!("   {} dirty  |  {} cached", dirty, graph.nodes.len() - dirty);
 
     println!("⚡ Executing build...");
+    let build_start = std::time::Instant::now();
     executor::execute_graph(&mut graph, cache.clone())?;
+    let duration = build_start.elapsed();
+
+    // 3. Report Analytics
+    let _ = cache.report_analytics(dirty as u32, (graph.nodes.len() - dirty) as u32, duration.as_millis() as u64);
 
     println!("📦 Exporting OCI Image...");
-    oci::export_image(&graph, "memobuild-demo:latest")?;
+    let output_dir = oci::export_image(&graph, "memobuild-demo:latest")?;
+
+    // 4. Push to Registry (Optional)
+    if args.iter().any(|arg| arg == "--push") {
+        let registry_url = env::var("MEMOBUILD_REGISTRY").unwrap_or_else(|_| "localhost:5000".to_string());
+        let repo = env::var("MEMOBUILD_REPO").unwrap_or_else(|_| "memobuild-demo".to_string());
+        let token = env::var("MEMOBUILD_TOKEN").ok();
+
+        let mut client = oci::registry::RegistryClient::new(&registry_url, &repo);
+        if let Some(t) = token {
+            client.set_token(&t);
+        }
+
+        client.push(&output_dir)?;
+    }
 
     println!("✅ Build and Export completed successfully");
     Ok(())

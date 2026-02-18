@@ -143,4 +143,11 @@ impl<R: RemoteCache> HybridCache<R> {
 
         Ok(())
     }
+
+    pub fn report_analytics(&self, dirty: u32, cached: u32, duration_ms: u64) -> Result<()> {
+        if let Some(ref remote) = self.remote {
+            remote.report_analytics(dirty, cached, duration_ms)?;
+        }
+        Ok(())
+    }
 }

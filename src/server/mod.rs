@@ -27,6 +27,13 @@ pub struct GcQuery {
     pub days: u32,
 }
 
+#[derive(Deserialize)]
+pub struct AnalyticsData {
+    pub dirty: u32,
+    pub cached: u32,
+    pub duration_ms: u64,
+}
+
 pub async fn start_server(port: u16, data_dir: PathBuf) -> Result<()> {
     let db_path = data_dir.join("metadata.db");
     let metadata = MetadataStore::new(&db_path)?;
@@ -42,6 +49,7 @@ pub async fn start_server(port: u16, data_dir: PathBuf) -> Result<()> {
         .route("/cache/:hash", get(get_artifact))
         .route("/cache/:hash", put(put_artifact))
         .route("/gc", post(gc_cache))
+        .route("/analytics", post(report_analytics))
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -144,6 +152,19 @@ async fn gc_cache(
         Err(e) => {
             eprintln!("GC error: {}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        }
+    }
+}
+
+async fn report_analytics(
+    State(state): State<Arc<AppState>>,
+    axum::Json(data): axum::Json<AnalyticsData>,
+) -> impl IntoResponse {
+    match state.metadata.record_build(data.dirty, data.cached, data.duration_ms) {
+        Ok(_) => StatusCode::OK,
+        Err(e) => {
+            eprintln!("Analytics error: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
         }
     }
 }

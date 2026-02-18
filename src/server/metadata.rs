@@ -110,6 +110,27 @@ impl MetadataStore {
         }
         Ok(hashes)
     }
+
+    pub fn record_build(&self, dirty: u32, cached: u32, duration_ms: u64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS build_analytics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                dirty_nodes INTEGER,
+                cached_nodes INTEGER,
+                duration_ms INTEGER
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "INSERT INTO build_analytics (dirty_nodes, cached_nodes, duration_ms) VALUES (?1, ?2, ?3)",
+            params![dirty, cached, duration_ms],
+        )?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
