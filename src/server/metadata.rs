@@ -24,11 +24,11 @@ impl MetadataStore {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS cache_entries (
                 hash TEXT PRIMARY KEY,
-                artifact_path TEXT NOT NULL,
-                size INTEGER,
-                created_at TEXT,
-                last_used TEXT,
-                hit_count INTEGER
+                artifact_path TEXT,
+                size BIGINT,
+                created_at TIMESTAMP,
+                last_used TIMESTAMP,
+                hit_count INT
             )",
             [],
         )?;

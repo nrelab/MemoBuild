@@ -2,7 +2,6 @@ use crate::cache::HybridCache;
 use crate::graph::BuildGraph;
 use crate::remote_cache::RemoteCache;
 use anyhow::Result;
-use rayon::prelude::*;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -31,7 +30,7 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
     }
 
     /// Execute the build graph with parallel and incremental capabilities
-    pub fn execute(&mut self, graph: &mut BuildGraph) -> Result<ExecutionStats> {
+    pub async fn execute(&mut self, graph: &mut BuildGraph) -> Result<ExecutionStats> {
         let start_time = Instant::now();
 
         // Reset stats
@@ -52,7 +51,7 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
                 continue;
             }
 
-            println!("� Executing level {}: {} nodes", level_idx, level.len());
+            println!(" Executing level {}: {} nodes", level_idx, level.len());
 
             let (parallel_nodes, sequential_nodes): (Vec<_>, Vec<_>) = level
                 .iter()
@@ -60,12 +59,13 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
 
             // Execute parallel nodes first
             if !parallel_nodes.is_empty() {
-                self.execute_parallel_nodes(graph, &parallel_nodes)?;
+                self.execute_parallel_nodes(graph, &parallel_nodes).await?;
             }
 
             // Execute sequential nodes
             if !sequential_nodes.is_empty() {
-                self.execute_sequential_nodes(graph, &sequential_nodes)?;
+                self.execute_sequential_nodes(graph, &sequential_nodes)
+                    .await?;
             }
         }
 
@@ -75,37 +75,42 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
         Ok(self.execution_stats.clone())
     }
 
-    /// Execute nodes in parallel using Rayon
-    fn execute_parallel_nodes(
+    /// Execute nodes in parallel
+    async fn execute_parallel_nodes(
         &mut self,
         graph: &mut BuildGraph,
         node_ids: &[&usize],
     ) -> Result<()> {
         println!("⚡ Executing {} nodes in parallel", node_ids.len());
 
-        let results: Vec<(usize, bool, bool, Option<u64>)> = node_ids
-            .par_iter()
-            .map(|&&node_id| {
-                let start_time = Instant::now();
-                let result = self.execute_single_node(graph, node_id);
-                let execution_time = start_time.elapsed().as_millis() as u64;
+        let mut futures = Vec::new();
 
-                match result {
-                    Ok((dirty, cache_hit)) => (node_id, dirty, cache_hit, Some(execution_time)),
-                    Err(e) => {
-                        eprintln!("⚠️ Error executing node {}: {}", node_id, e);
-                        (node_id, false, false, Some(execution_time))
-                    }
-                }
-            })
-            .collect();
+        for &&node_id in node_ids {
+            let node = &graph.nodes[node_id];
+            let name = node.name.clone();
+            let hash = node.hash.clone();
+            let dirty = node.dirty;
+            let kind = node.kind.clone();
+            let cache = self.cache.clone();
+
+            futures.push(async move {
+                let start_time = Instant::now();
+                let result = Self::execute_node_logic(cache, &name, &hash, dirty, &kind).await;
+                let execution_time = start_time.elapsed().as_millis() as u64;
+                (node_id, result, execution_time)
+            });
+        }
+
+        let results = futures::future::join_all(futures).await;
 
         // Update graph status and stats
-        for (node_id, dirty, cache_hit, execution_time) in results {
+        for (node_id, result, execution_time) in results {
+            let (dirty, cache_hit) = result?;
+
             graph.nodes[node_id].dirty = dirty;
             graph.nodes[node_id].cache_hit = cache_hit;
             graph.nodes[node_id].metadata.last_executed = Some(std::time::SystemTime::now());
-            graph.nodes[node_id].metadata.execution_time_ms = execution_time;
+            graph.nodes[node_id].metadata.execution_time_ms = Some(execution_time);
 
             if cache_hit {
                 self.execution_stats.cache_hits += 1;
@@ -118,8 +123,8 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
         Ok(())
     }
 
-    /// Execute nodes sequentially (for non-parallelizable operations)
-    fn execute_sequential_nodes(
+    /// Execute nodes sequentially
+    async fn execute_sequential_nodes(
         &mut self,
         graph: &mut BuildGraph,
         node_ids: &[&usize],
@@ -128,86 +133,88 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
 
         for &&node_id in node_ids {
             let start_time = Instant::now();
+            let node = &graph.nodes[node_id];
 
-            match self.execute_single_node(graph, node_id) {
-                Ok((dirty, cache_hit)) => {
-                    let execution_time = start_time.elapsed().as_millis() as u64;
+            let result = Self::execute_node_logic(
+                self.cache.clone(),
+                &node.name,
+                &node.hash,
+                node.dirty,
+                &node.kind,
+            )
+            .await?;
 
-                    graph.nodes[node_id].dirty = dirty;
-                    graph.nodes[node_id].cache_hit = cache_hit;
-                    graph.nodes[node_id].metadata.last_executed =
-                        Some(std::time::SystemTime::now());
-                    graph.nodes[node_id].metadata.execution_time_ms = Some(execution_time);
+            let (dirty, cache_hit) = result;
+            let execution_time = start_time.elapsed().as_millis() as u64;
 
-                    if cache_hit {
-                        self.execution_stats.cache_hits += 1;
-                    } else {
-                        self.execution_stats.cache_misses += 1;
-                        self.execution_stats.executed_nodes += 1;
-                    }
-                }
-                Err(e) => {
-                    eprintln!("⚠️ Error executing sequential node {}: {}", node_id, e);
-                }
+            graph.nodes[node_id].dirty = dirty;
+            graph.nodes[node_id].cache_hit = cache_hit;
+            graph.nodes[node_id].metadata.last_executed = Some(std::time::SystemTime::now());
+            graph.nodes[node_id].metadata.execution_time_ms = Some(execution_time);
+
+            if cache_hit {
+                self.execution_stats.cache_hits += 1;
+            } else {
+                self.execution_stats.cache_misses += 1;
+                self.execution_stats.executed_nodes += 1;
             }
         }
 
         Ok(())
     }
 
-    /// Execute a single node with cache checking and building
-    fn execute_single_node(&self, graph: &BuildGraph, node_id: usize) -> Result<(bool, bool)> {
-        let node = &graph.nodes[node_id];
-        let node_hash = node.hash.clone();
-
+    async fn execute_node_logic(
+        cache: Arc<HybridCache<R>>,
+        name: &str,
+        hash: &str,
+        dirty: bool,
+        kind: &crate::graph::NodeKind,
+    ) -> Result<(bool, bool)> {
         // 1. Check cache first
-        match self.cache.get_artifact(&node_hash) {
+        match cache.get_artifact(hash).await {
             Ok(Some(_data)) => {
-                println!("⚡ Cache HIT: {} [{}]", node.name, &node_hash[..8]);
+                println!("⚡ Cache HIT: {} [{}]", name, &hash[..8]);
                 return Ok((false, true));
             }
-            Err(e) => eprintln!("⚠️ Cache error for {}: {}", node.name, e),
+            Err(e) => eprintln!("⚠️ Cache error for {}: {}", name, e),
             _ => {}
         }
 
         // 2. Build if dirty or not cached
-        if node.dirty {
-            println!("🔧 Rebuilding node: {}...", node.name);
-            let artifact_data = self.build_node_artifact(node)?;
+        if dirty {
+            println!("🔧 Rebuilding node: {}...", name);
+            let artifact_data = Self::build_node_artifact_static(kind)?;
 
-            if let Err(e) = self.cache.put_artifact(&node_hash, &artifact_data) {
-                eprintln!("⚠️ Cache put error for {}: {}", node.name, e);
+            if let Err(e) = cache.put_artifact(hash, &artifact_data).await {
+                eprintln!("⚠️ Cache put error for {}: {}", name, e);
             }
             Ok((false, false))
         } else {
             // Node is clean but not in cache - rebuild it
-            println!("🔨 Building clean node: {}...", node.name);
-            let artifact_data = self.build_node_artifact(node)?;
+            println!("🔨 Building clean node: {}...", name);
+            let artifact_data = Self::build_node_artifact_static(kind)?;
 
-            if let Err(e) = self.cache.put_artifact(&node_hash, &artifact_data) {
-                eprintln!("⚠️ Cache put error for {}: {}", node.name, e);
+            if let Err(e) = cache.put_artifact(hash, &artifact_data).await {
+                eprintln!("⚠️ Cache put error for {}: {}", name, e);
             }
             Ok((false, false))
         }
     }
 
-    /// Build artifact for a node (placeholder implementation)
-    fn build_node_artifact(&self, node: &crate::graph::Node) -> Result<Vec<u8>> {
-        // This is a placeholder - in a real implementation, this would
-        // execute the actual Docker operation or build step
-        let artifact_content = match &node.kind {
-            crate::graph::NodeKind::From => format!("FROM artifact: {}", node.content),
-            crate::graph::NodeKind::Run => format!("RUN artifact: {}", node.content),
+    fn build_node_artifact_static(kind: &crate::graph::NodeKind) -> Result<Vec<u8>> {
+        let artifact_content = match kind {
+            crate::graph::NodeKind::From => format!("FROM artifact"),
+            crate::graph::NodeKind::Run => format!("RUN artifact"),
             crate::graph::NodeKind::Copy { src, dst } => {
                 format!("COPY artifact: {} -> {}", src.display(), dst.display())
             }
-            crate::graph::NodeKind::Env => format!("ENV artifact: {}", node.content),
-            crate::graph::NodeKind::Workdir => format!("WORKDIR artifact: {}", node.content),
-            crate::graph::NodeKind::Cmd => format!("CMD artifact: {}", node.content),
+            crate::graph::NodeKind::Env => format!("ENV artifact"),
+            crate::graph::NodeKind::Workdir => format!("WORKDIR artifact"),
+            crate::graph::NodeKind::Cmd => format!("CMD artifact"),
             crate::graph::NodeKind::Git { url, target } => {
                 format!("GIT artifact: {} -> {}", url, target.display())
             }
-            crate::graph::NodeKind::Other => format!("OTHER artifact: {}", node.content),
+            crate::graph::NodeKind::Other => format!("OTHER artifact"),
         };
 
         Ok(artifact_content.into_bytes())
@@ -239,11 +246,11 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
 }
 
 /// Legacy function for backward compatibility
-pub fn execute_graph<R: RemoteCache + 'static>(
+pub async fn execute_graph<R: RemoteCache + 'static>(
     graph: &mut BuildGraph,
     cache: Arc<HybridCache<R>>,
 ) -> Result<()> {
     let mut executor = IncrementalExecutor::new(cache);
-    executor.execute(graph)?;
+    executor.execute(graph).await?;
     Ok(())
 }

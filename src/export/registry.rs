@@ -1,4 +1,4 @@
-use crate::oci::manifest::OCIManifest;
+use crate::export::manifest::OCIManifest;
 use anyhow::{Context, Result};
 use reqwest::blocking::Client;
 
@@ -103,7 +103,7 @@ impl RegistryClient {
         let manifest: OCIManifest = serde_json::from_str(&manifest_content)?;
         let manifest_digest = format!(
             "sha256:{}",
-            crate::oci::utils::sha256_string(&manifest_content)
+            crate::export::utils::sha256_string(&manifest_content)
         );
 
         // Save manifest
@@ -124,9 +124,9 @@ impl RegistryClient {
         }
 
         // 4. Create index.json
-        let index = crate::oci::manifest::OCIIndex {
+        let index = crate::export::manifest::OCIIndex {
             schema_version: 2,
-            manifests: vec![crate::oci::manifest::OCIDescriptor {
+            manifests: vec![crate::export::manifest::OCIDescriptor {
                 media_type: "application/vnd.oci.image.manifest.v1+json".to_string(),
                 digest: manifest_digest,
                 size: manifest_content.len() as u64,

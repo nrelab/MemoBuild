@@ -1,4 +1,4 @@
-use memobuild::{cache, core, docker, executor, oci, remote_cache};
+use memobuild::{cache, core, docker, executor, export, remote_cache};
 
 #[cfg(feature = "server")]
 use memobuild::server;
@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
             .join(".memobuild-cache")
             .join("images")
             .join(full_name.replace([':', '/'], "-"));
-        let client = oci::registry::RegistryClient::new(registry, repo);
+        let client = export::registry::RegistryClient::new(registry, repo);
         client.pull(tag, &output_dir)?;
         return Ok(());
     }
@@ -158,7 +158,7 @@ spec:
                     .join(img.replace([':', '/'], "-"));
                 if !image_cache_dir.exists() {
                     println!("   📥 Base image not found locally, pulling...");
-                    let client = oci::registry::RegistryClient::new(registry, repo);
+                    let client = export::registry::RegistryClient::new(registry, repo);
                     let _ = client.pull(tag, &image_cache_dir);
                 }
             }
@@ -195,18 +195,20 @@ spec:
 
     println!("⚡ Executing build...");
     let build_start = std::time::Instant::now();
-    executor::execute_graph(&mut graph, cache.clone())?;
+    executor::execute_graph(&mut graph, cache.clone()).await?;
     let duration = build_start.elapsed();
 
     // 3. Report Analytics
-    let _ = cache.report_analytics(
-        dirty as u32,
-        (graph.nodes.len() - dirty) as u32,
-        duration.as_millis() as u64,
-    );
+    let _ = cache
+        .report_analytics(
+            dirty as u32,
+            (graph.nodes.len() - dirty) as u32,
+            duration.as_millis() as u64,
+        )
+        .await;
 
     println!("📦 Exporting OCI Image...");
-    let output_dir = oci::export_image(&graph, "memobuild-demo:latest")?;
+    let output_dir = export::export_image(&graph, "memobuild-demo:latest")?;
 
     // 4. Push to Registry (Optional)
     if args.iter().any(|arg| arg == "--push") {
@@ -215,7 +217,7 @@ spec:
         let repo = env::var("MEMOBUILD_REPO").unwrap_or_else(|_| "memobuild-demo".to_string());
         let token = env::var("MEMOBUILD_TOKEN").ok();
 
-        let mut client = oci::registry::RegistryClient::new(&registry_url, &repo);
+        let mut client = export::registry::RegistryClient::new(&registry_url, &repo);
         if let Some(t) = token {
             client.set_token(&t);
         }

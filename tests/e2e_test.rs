@@ -162,8 +162,8 @@ RUN npm install
 }
 
 #[cfg(feature = "server")]
-#[test]
-fn test_end_to_end_build_with_remote_cache() {
+#[tokio::test]
+async fn test_end_to_end_build_with_remote_cache() {
     // 1. Setup temporary directories
     let server_dir = tempdir().expect("Failed to create server temp dir");
     let client_dir = tempdir().expect("Failed to create client temp dir");
@@ -173,20 +173,17 @@ fn test_end_to_end_build_with_remote_cache() {
     let client_path = client_dir.path().to_path_buf();
     let build_path = build_dir.path().to_path_buf();
 
-    // 2. Start Remote Cache Server in background thread
+    // 2. Start Remote Cache Server in background task
     let port = 9991;
     let server_path_clone = server_path.clone();
-    thread::spawn(move || {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            server::start_server(port, server_path_clone, None)
-                .await
-                .ok();
-        });
+    tokio::spawn(async move {
+        server::start_server(port, server_path_clone, None)
+            .await
+            .ok();
     });
 
     // Wait for server to start
-    thread::sleep(Duration::from_millis(1000));
+    tokio::time::sleep(Duration::from_millis(1500)).await;
 
     // 3. Configure Client Environment
     std::env::set_var("MEMOBUILD_CACHE_DIR", client_path.to_str().unwrap());
@@ -215,7 +212,9 @@ fn test_end_to_end_build_with_remote_cache() {
     core::detect_changes(&mut graph);
     core::propagate_dirty(&mut graph);
 
-    executor::execute_graph(&mut graph, cache.clone()).expect("First build failed");
+    executor::execute_graph(&mut graph, cache.clone())
+        .await
+        .expect("First build failed");
 
     // 7. Run Second Build (Should be cached)
     // Manually clear local cache to force remote fetch
@@ -231,7 +230,9 @@ fn test_end_to_end_build_with_remote_cache() {
     let remote2 = remote_cache::HttpRemoteCache::new(format!("http://127.0.0.1:{}", port));
     let cache2 = Arc::new(cache::HybridCache::new(Some(remote2)).unwrap());
 
-    executor::execute_graph(&mut graph2, cache2.clone()).expect("Second build failed");
+    executor::execute_graph(&mut graph2, cache2.clone())
+        .await
+        .expect("Second build failed");
 
     // Verify that nodes were fetched from remote (cached should be > 0)
     let _cached_count = graph2.nodes.iter().filter(|n| !n.dirty).count();
@@ -239,8 +240,6 @@ fn test_end_to_end_build_with_remote_cache() {
         _cached_count > 0,
         "Build should have used remote cache items"
     );
-    // In this simple test, Alpine might be cached or dirty depending on environment.
-    // But the RUN node should definitely be cached if it worked.
 
     // 8. Cleanup
     std::env::set_current_dir(original_cwd).unwrap();

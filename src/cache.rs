@@ -124,7 +124,7 @@ impl<R: RemoteCache + 'static> HybridCache<R> {
         })
     }
 
-    pub fn get_artifact(&self, key: &str) -> Result<Option<Vec<u8>>> {
+    pub async fn get_artifact(&self, key: &str) -> Result<Option<Vec<u8>>> {
         // 1. Try local
         if let Some(data) = self.local.get_data(key)? {
             return Ok(Some(data));
@@ -132,7 +132,7 @@ impl<R: RemoteCache + 'static> HybridCache<R> {
 
         // 2. Try remote
         if let Some(ref remote) = self.remote {
-            if let Some(data) = remote.get(key)? {
+            if let Some(data) = remote.get(key).await? {
                 // Populate local cache
                 self.local.put(key, &data)?;
                 return Ok(Some(data));
@@ -142,21 +142,21 @@ impl<R: RemoteCache + 'static> HybridCache<R> {
         Ok(None)
     }
 
-    pub fn put_artifact(&self, key: &str, data: &[u8]) -> Result<()> {
+    pub async fn put_artifact(&self, key: &str, data: &[u8]) -> Result<()> {
         // 1. Put local
         self.local.put(key, data)?;
 
         // 2. Put remote
         if let Some(ref remote) = self.remote {
-            remote.put(key, data)?;
+            remote.put(key, data).await?;
         }
 
         Ok(())
     }
 
-    pub fn report_analytics(&self, dirty: u32, cached: u32, duration_ms: u64) -> Result<()> {
+    pub async fn report_analytics(&self, dirty: u32, cached: u32, duration_ms: u64) -> Result<()> {
         if let Some(ref remote) = self.remote {
-            remote.report_analytics(dirty, cached, duration_ms)?;
+            remote.report_analytics(dirty, cached, duration_ms).await?;
         }
         Ok(())
     }
@@ -173,10 +173,10 @@ impl<R: RemoteCache + 'static> HybridCache<R> {
             let hash_clone = hash.clone();
 
             // Spawn background task to fetch from remote
-            tokio::task::spawn_blocking(move || {
+            tokio::task::spawn(async move {
                 if let Some(ref remote) = cache_clone.remote {
                     // Try to get from remote
-                    match remote.get(&hash_clone) {
+                    match remote.get(&hash_clone).await {
                         Ok(Some(data)) => {
                             // Successfully fetched, store in local cache
                             if let Err(e) = cache_clone.local.put(&hash_clone, &data) {

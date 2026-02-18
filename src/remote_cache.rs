@@ -1,5 +1,6 @@
 use anyhow::Result;
-use reqwest::blocking::Client;
+use async_trait::async_trait;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -8,11 +9,12 @@ pub struct RemoteCacheEntry {
     pub size: u64,
 }
 
+#[async_trait]
 pub trait RemoteCache: Send + Sync {
-    fn has(&self, hash: &str) -> Result<bool>;
-    fn get(&self, hash: &str) -> Result<Option<Vec<u8>>>;
-    fn put(&self, hash: &str, data: &[u8]) -> Result<()>;
-    fn report_analytics(&self, dirty: u32, cached: u32, duration_ms: u64) -> Result<()>;
+    async fn has(&self, hash: &str) -> Result<bool>;
+    async fn get(&self, hash: &str) -> Result<Option<Vec<u8>>>;
+    async fn put(&self, hash: &str, data: &[u8]) -> Result<()>;
+    async fn report_analytics(&self, dirty: u32, cached: u32, duration_ms: u64) -> Result<()>;
 }
 
 pub struct HttpRemoteCache {
@@ -34,20 +36,20 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::io::{Read, Write};
 
+#[async_trait]
 impl RemoteCache for HttpRemoteCache {
-    fn has(&self, hash: &str) -> Result<bool> {
+    async fn has(&self, hash: &str) -> Result<bool> {
         let url = format!("{}/cache/{}", self.base_url, hash);
-        let resp = self.client.head(&url).send()?;
+        let resp = self.client.head(&url).send().await?;
         Ok(resp.status().is_success())
     }
 
-    fn get(&self, hash: &str) -> Result<Option<Vec<u8>>> {
+    async fn get(&self, hash: &str) -> Result<Option<Vec<u8>>> {
         let url = format!("{}/cache/{}", self.base_url, hash);
-        let mut resp = self.client.get(&url).send()?;
+        let resp = self.client.get(&url).send().await?;
 
         if resp.status().is_success() {
-            let mut compressed_data = Vec::new();
-            resp.read_to_end(&mut compressed_data)?;
+            let compressed_data = resp.bytes().await?;
 
             // Decompress
             let mut decoder = GzDecoder::new(&compressed_data[..]);
@@ -62,9 +64,9 @@ impl RemoteCache for HttpRemoteCache {
         }
     }
 
-    fn put(&self, hash: &str, data: &[u8]) -> Result<()> {
+    async fn put(&self, hash: &str, data: &[u8]) -> Result<()> {
         // Incremental Layer Update: check if exists before uploading
-        if self.has(hash)? {
+        if self.has(hash).await? {
             println!("   (skip upload: remote already has {})", &hash[..8]);
             return Ok(());
         }
@@ -76,7 +78,7 @@ impl RemoteCache for HttpRemoteCache {
         encoder.write_all(data)?;
         let compressed_data = encoder.finish()?;
 
-        let resp = self.client.put(&url).body(compressed_data).send()?;
+        let resp = self.client.put(&url).body(compressed_data).send().await?;
 
         if !resp.status().is_success() {
             anyhow::bail!("Failed to upload to remote cache: {}", resp.status());
@@ -84,7 +86,7 @@ impl RemoteCache for HttpRemoteCache {
         Ok(())
     }
 
-    fn report_analytics(&self, dirty: u32, cached: u32, duration_ms: u64) -> Result<()> {
+    async fn report_analytics(&self, dirty: u32, cached: u32, duration_ms: u64) -> Result<()> {
         let url = format!("{}/analytics", self.base_url);
         let data = serde_json::json!({
             "dirty": dirty,
@@ -92,7 +94,7 @@ impl RemoteCache for HttpRemoteCache {
             "duration_ms": duration_ms
         });
 
-        let resp = self.client.post(&url).json(&data).send()?;
+        let resp = self.client.post(&url).json(&data).send().await?;
 
         if !resp.status().is_success() {
             eprintln!("Failed to report analytics: {}", resp.status());
