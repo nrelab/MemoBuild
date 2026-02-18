@@ -35,10 +35,16 @@ impl IgnoreRules {
 
     /// Returns true if the given path (relative to the build context root) should be ignored
     pub fn is_ignored(&self, path: &Path) -> bool {
-        let path_str = path.to_string_lossy();
-        for pattern in &self.patterns {
-            if pattern.matches(&path_str) {
-                return true;
+        // Check the path itself and all its parents
+        for ancestor in path.ancestors() {
+            let path_str = ancestor.to_string_lossy();
+            if path_str.is_empty() || path_str == "." {
+                continue;
+            }
+            for pattern in &self.patterns {
+                if pattern.matches(&path_str) {
+                    return true;
+                }
             }
         }
         false

@@ -53,7 +53,7 @@ mod tests {
     #[test]
     fn test_walk_respects_ignore() {
         let dir = make_temp_tree();
-        let rules = IgnoreRules::from_str("sub");
+        let rules = IgnoreRules::parse("sub");
         assert_eq!(walk_dir(dir.path(), &rules).len(), 2);
     }
 
