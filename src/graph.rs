@@ -92,7 +92,7 @@ impl Node {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BuildGraph {
     pub nodes: Vec<Node>,
 }
@@ -100,12 +100,6 @@ pub struct BuildGraph {
 impl BuildGraph {
     pub fn new() -> Self {
         Self { nodes: Vec::new() }
-    }
-}
-
-impl Default for BuildGraph {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

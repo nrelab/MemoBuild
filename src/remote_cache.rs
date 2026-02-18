@@ -1,3 +1,4 @@
+use crate::dashboard::BuildEvent;
 use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::Client;
@@ -14,9 +15,25 @@ pub trait RemoteCache: Send + Sync {
     async fn has(&self, hash: &str) -> Result<bool>;
     async fn get(&self, hash: &str) -> Result<Option<Vec<u8>>>;
     async fn put(&self, hash: &str, data: &[u8]) -> Result<()>;
+
+    // Layered cache methods
+    async fn has_layer(&self, hash: &str) -> Result<bool>;
+    async fn get_layer(&self, hash: &str) -> Result<Option<Vec<u8>>>;
+    async fn put_layer(&self, hash: &str, data: &[u8]) -> Result<()>;
+    async fn get_node_layers(&self, hash: &str) -> Result<Option<Vec<String>>>;
+    async fn register_node_layers(
+        &self,
+        hash: &str,
+        layers: &[String],
+        total_size: u64,
+    ) -> Result<()>;
+
+    async fn report_build_event(&self, event: BuildEvent) -> Result<()>;
+    async fn report_dag(&self, dag: &crate::graph::BuildGraph) -> Result<()>;
     async fn report_analytics(&self, dirty: u32, cached: u32, duration_ms: u64) -> Result<()>;
 }
 
+#[derive(Clone)]
 pub struct HttpRemoteCache {
     base_url: String,
     client: Client,
@@ -82,6 +99,91 @@ impl RemoteCache for HttpRemoteCache {
 
         if !resp.status().is_success() {
             anyhow::bail!("Failed to upload to remote cache: {}", resp.status());
+        }
+        Ok(())
+    }
+
+    async fn has_layer(&self, hash: &str) -> Result<bool> {
+        let url = format!("{}/cache/layer/{}", self.base_url, hash);
+        let resp = self.client.head(&url).send().await?;
+        Ok(resp.status().is_success())
+    }
+
+    async fn get_layer(&self, hash: &str) -> Result<Option<Vec<u8>>> {
+        let url = format!("{}/cache/layer/{}", self.base_url, hash);
+        let resp = self.client.get(&url).send().await?;
+
+        if resp.status().is_success() {
+            let compressed_data = resp.bytes().await?;
+            // Decompress
+            let mut decoder = GzDecoder::new(&compressed_data[..]);
+            let mut decompressed_data = Vec::new();
+            decoder.read_to_end(&mut decompressed_data)?;
+            Ok(Some(decompressed_data))
+        } else if resp.status() == 404 {
+            Ok(None)
+        } else {
+            anyhow::bail!("Remote layer cache error: {}", resp.status());
+        }
+    }
+
+    async fn put_layer(&self, hash: &str, data: &[u8]) -> Result<()> {
+        let url = format!("{}/cache/layer/{}", self.base_url, hash);
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(data)?;
+        let compressed_data = encoder.finish()?;
+        let resp = self.client.put(&url).body(compressed_data).send().await?;
+        if !resp.status().is_success() {
+            anyhow::bail!("Failed to upload layer to remote cache: {}", resp.status());
+        }
+        Ok(())
+    }
+
+    async fn get_node_layers(&self, hash: &str) -> Result<Option<Vec<String>>> {
+        let url = format!("{}/cache/node/{}/layers", self.base_url, hash);
+        let resp = self.client.get(&url).send().await?;
+        if resp.status().is_success() {
+            let layers: Vec<String> = resp.json().await?;
+            Ok(Some(layers))
+        } else if resp.status() == 404 {
+            Ok(None)
+        } else {
+            anyhow::bail!("Failed to get node layers: {}", resp.status());
+        }
+    }
+
+    async fn register_node_layers(
+        &self,
+        hash: &str,
+        layers: &[String],
+        total_size: u64,
+    ) -> Result<()> {
+        let url = format!("{}/cache/node/{}/layers", self.base_url, hash);
+        let payload = serde_json::json!({
+            "layers": layers,
+            "total_size": total_size
+        });
+        let resp = self.client.post(&url).json(&payload).send().await?;
+        if !resp.status().is_success() {
+            anyhow::bail!("Failed to register node layers: {}", resp.status());
+        }
+        Ok(())
+    }
+
+    async fn report_build_event(&self, event: BuildEvent) -> Result<()> {
+        let url = format!("{}/build-event", self.base_url);
+        let resp = self.client.post(&url).json(&event).send().await?;
+        if !resp.status().is_success() {
+            eprintln!("Failed to report build event: {}", resp.status());
+        }
+        Ok(())
+    }
+
+    async fn report_dag(&self, dag: &crate::graph::BuildGraph) -> Result<()> {
+        let url = format!("{}/dag", self.base_url);
+        let resp = self.client.post(&url).json(dag).send().await?;
+        if !resp.status().is_success() {
+            eprintln!("Failed to report DAG: {}", resp.status());
         }
         Ok(())
     }

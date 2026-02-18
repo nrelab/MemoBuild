@@ -1,3 +1,4 @@
+use memobuild::remote_cache::RemoteCache;
 use memobuild::{cache, core, docker, executor, export, remote_cache};
 
 #[cfg(feature = "server")]
@@ -6,6 +7,7 @@ use memobuild::server;
 use anyhow::Result;
 use std::env;
 use std::fs;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -98,15 +100,10 @@ spec:
                 .iter()
                 .position(|arg| arg == "--port")
                 .and_then(|i| args.get(i + 1))
-                .and_then(|p| p.parse::<u16>().ok())
+                .and_then(|p| p.parse().ok())
                 .unwrap_or(8080);
 
-            let webhook_url = args
-                .iter()
-                .position(|arg| arg == "--webhook")
-                .and_then(|i| args.get(i + 1))
-                .cloned()
-                .or_else(|| env::var("MEMOBUILD_WEBHOOK_URL").ok());
+            let webhook_url = env::var("MEMOBUILD_WEBHOOK").ok();
 
             let data_dir = env::current_dir()?.join(".memobuild-server");
             fs::create_dir_all(&data_dir)?;
@@ -125,7 +122,14 @@ spec:
     // 1. Initialize Cache
     let remote_url = env::var("MEMOBUILD_REMOTE_URL").ok();
     let remote_cache = remote_url.map(remote_cache::HttpRemoteCache::new);
-    let cache = std::sync::Arc::new(cache::HybridCache::new(remote_cache)?);
+
+    let observer = remote_cache.as_ref().map(|r| {
+        Arc::new(memobuild::dashboard::RemoteObserver::new(Arc::new(
+            r.clone(),
+        ))) as Arc<dyn memobuild::dashboard::BuildObserver>
+    });
+
+    let cache = Arc::new(cache::HybridCache::new(remote_cache)?);
 
     // 2. Prepare Dockerfile
     if !std::path::Path::new("Dockerfile").exists() {
@@ -140,16 +144,22 @@ spec:
     println!("📄 Parsing Dockerfile...");
     let instructions = docker::parser::parse_dockerfile(&dockerfile);
 
-    // 2.2 Automatic Base Image Pulling
+    // 2.2 Rich Dependency Analysis & Base Image Management
     for instr in &instructions {
         if let docker::parser::Instruction::From(img) = instr {
-            if img.contains('/') || img.contains(':') {
-                println!("📦 Checking base image: {}...", img);
-                let (registry_repo, tag) = img.split_once(':').unwrap_or((img, "latest"));
-                let (registry, repo) = if registry_repo.contains('/') {
-                    registry_repo.split_once('/').unwrap()
+            println!("   🔍 Dependency: base image {}", img);
+            if args.iter().any(|arg| arg == "--pull") {
+                let (registry, repo, tag) = if let Some((registry_repo, tag)) = img.split_once(':')
+                {
+                    if let Some((reg, rep)) = registry_repo.split_once('/') {
+                        (reg, rep, tag)
+                    } else {
+                        ("index.docker.io", registry_repo, tag)
+                    }
+                } else if let Some((reg, rep)) = img.split_once('/') {
+                    (reg, rep, "latest")
                 } else {
-                    ("index.docker.io", registry_repo)
+                    ("index.docker.io", img.as_str(), "latest")
                 };
 
                 let image_cache_dir = env::current_dir()?
@@ -181,6 +191,11 @@ spec:
         graph.nodes.len() - dirty
     );
 
+    // Report DAG for visualization
+    if let Some(ref r) = cache.remote {
+        let _ = r.report_dag(&graph).await;
+    }
+
     // 2.5 Smart Prefetching
     if dirty > 0 {
         println!("🚀 Initiating smart prefetching for {} nodes...", dirty);
@@ -195,7 +210,7 @@ spec:
 
     println!("⚡ Executing build...");
     let build_start = std::time::Instant::now();
-    executor::execute_graph(&mut graph, cache.clone()).await?;
+    executor::execute_graph(&mut graph, cache.clone(), observer).await?;
     let duration = build_start.elapsed();
 
     // 3. Report Analytics

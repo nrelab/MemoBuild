@@ -212,7 +212,7 @@ async fn test_end_to_end_build_with_remote_cache() {
     core::detect_changes(&mut graph);
     core::propagate_dirty(&mut graph);
 
-    executor::execute_graph(&mut graph, cache.clone())
+    executor::execute_graph(&mut graph, cache.clone(), None)
         .await
         .expect("First build failed");
 
@@ -230,7 +230,7 @@ async fn test_end_to_end_build_with_remote_cache() {
     let remote2 = remote_cache::HttpRemoteCache::new(format!("http://127.0.0.1:{}", port));
     let cache2 = Arc::new(cache::HybridCache::new(Some(remote2)).unwrap());
 
-    executor::execute_graph(&mut graph2, cache2.clone())
+    executor::execute_graph(&mut graph2, cache2.clone(), None)
         .await
         .expect("Second build failed");
 

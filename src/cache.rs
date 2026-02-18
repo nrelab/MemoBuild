@@ -130,8 +130,31 @@ impl<R: RemoteCache + 'static> HybridCache<R> {
             return Ok(Some(data));
         }
 
-        // 2. Try remote
+        // 2. Try remote (Layered protocol)
         if let Some(ref remote) = self.remote {
+            if let Some(layer_hashes) = remote.get_node_layers(key).await? {
+                println!(
+                    "   📦 Reconstructing artifact from {} layers...",
+                    layer_hashes.len()
+                );
+                let mut layers_data = Vec::with_capacity(layer_hashes.len());
+                for hash in layer_hashes {
+                    if let Some(layer) = remote.get_layer(&hash).await? {
+                        layers_data.push(layer);
+                    } else {
+                        anyhow::bail!(
+                            "Cache integrity failure: layer {} missing for node {}",
+                            hash,
+                            key
+                        );
+                    }
+                }
+                let data = crate::cache_utils::merge_artifact(layers_data);
+                self.local.put(key, &data)?;
+                return Ok(Some(data));
+            }
+
+            // Fallback for non-layered artifacts
             if let Some(data) = remote.get(key).await? {
                 // Populate local cache
                 self.local.put(key, &data)?;
@@ -146,9 +169,21 @@ impl<R: RemoteCache + 'static> HybridCache<R> {
         // 1. Put local
         self.local.put(key, data)?;
 
-        // 2. Put remote
+        // 2. Put remote (Layered protocol)
         if let Some(ref remote) = self.remote {
-            remote.put(key, data).await?;
+            let layers = crate::cache_utils::split_artifact(data);
+            let mut layer_hashes = Vec::new();
+
+            for layer in layers {
+                layer_hashes.push(layer.hash.clone());
+                if !remote.has_layer(&layer.hash).await? {
+                    remote.put_layer(&layer.hash, &layer.data).await?;
+                }
+            }
+
+            remote
+                .register_node_layers(key, &layer_hashes, data.len() as u64)
+                .await?;
         }
 
         Ok(())

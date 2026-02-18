@@ -28,7 +28,32 @@ impl MetadataStore {
                 size BIGINT,
                 created_at TIMESTAMP,
                 last_used TIMESTAMP,
-                hit_count INT
+                hit_count INT,
+                is_layered BOOLEAN DEFAULT FALSE
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS cache_layers (
+                layer_hash TEXT PRIMARY KEY,
+                size BIGINT,
+                storage_path TEXT,
+                created_at TIMESTAMP,
+                last_used TIMESTAMP,
+                ref_count INT DEFAULT 0
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS node_to_layers (
+                node_hash TEXT,
+                layer_hash TEXT,
+                position INT,
+                PRIMARY KEY(node_hash, position),
+                FOREIGN KEY(node_hash) REFERENCES cache_entries(hash),
+                FOREIGN KEY(layer_hash) REFERENCES cache_layers(layer_hash)
             )",
             [],
         )?;
@@ -42,14 +67,119 @@ impl MetadataStore {
         let conn = self.conn.lock().unwrap();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
-            "INSERT INTO cache_entries (hash, artifact_path, size, created_at, last_used, hit_count)
-             VALUES (?1, ?2, ?3, ?4, ?4, 0)
+            "INSERT INTO cache_entries (hash, artifact_path, size, created_at, last_used, hit_count, is_layered)
+             VALUES (?1, ?2, ?3, ?4, ?4, 0, FALSE)
              ON CONFLICT(hash) DO UPDATE SET
                 last_used = ?4,
                 hit_count = hit_count + 1",
             params![hash, path, size, now],
         )?;
         Ok(())
+    }
+
+    pub fn insert_layered_node(
+        &self,
+        hash: &str,
+        size: u64,
+        layer_hashes: &[String],
+    ) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        tx.execute(
+            "INSERT INTO cache_entries (hash, artifact_path, size, created_at, last_used, hit_count, is_layered)
+             VALUES (?1, '', ?2, ?3, ?3, 0, TRUE)
+             ON CONFLICT(hash) DO UPDATE SET
+                last_used = ?3,
+                hit_count = hit_count + 1",
+            params![hash, size, now],
+        )?;
+
+        // Remove old mappings
+        tx.execute(
+            "DELETE FROM node_to_layers WHERE node_hash = ?1",
+            params![hash],
+        )?;
+
+        for (pos, layer_hash) in layer_hashes.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO node_to_layers (node_hash, layer_hash, position) VALUES (?1, ?2, ?3)",
+                params![hash, layer_hash, pos as i32],
+            )?;
+
+            // Increment ref count for existing layers
+            tx.execute(
+                "UPDATE cache_layers SET ref_count = ref_count + 1 WHERE layer_hash = ?1",
+                params![layer_hash],
+            )?;
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn insert_layer(&self, hash: &str, path: &str, size: u64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO cache_layers (layer_hash, storage_path, size, created_at, last_used)
+             VALUES (?1, ?2, ?3, ?4, ?4)
+             ON CONFLICT(layer_hash) DO UPDATE SET
+                last_used = ?4",
+            params![hash, path, size, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_node_layers(&self, hash: &str) -> Result<Option<Vec<String>>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT layer_hash FROM node_to_layers WHERE node_hash = ?1 ORDER BY position",
+        )?;
+        let rows = stmt.query_map(params![hash], |row| row.get(0))?;
+
+        let mut layers = Vec::new();
+        for layer in rows {
+            layers.push(layer?);
+        }
+
+        if layers.is_empty() {
+            // Check if node exists at all
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM cache_entries WHERE hash = ?1",
+                params![hash],
+                |row| row.get(0),
+            )?;
+            if count == 0 {
+                return Ok(None);
+            }
+        }
+
+        Ok(Some(layers))
+    }
+
+    pub fn layer_exists(&self, hash: &str) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM cache_layers WHERE layer_hash = ?1",
+            params![hash],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    pub fn get_layer_path(&self, hash: &str) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt =
+            conn.prepare("SELECT storage_path FROM cache_layers WHERE layer_hash = ?1")?;
+        let mut rows = stmt.query(params![hash])?;
+
+        if let Some(row) = rows.next()? {
+            Ok(Some(row.get(0)?))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn get(&self, hash: &str) -> Result<Option<CacheEntry>> {
@@ -94,9 +224,71 @@ impl MetadataStore {
     }
 
     pub fn delete(&self, hash: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM cache_entries WHERE hash = ?1", params![hash])?;
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+
+        // Decrement ref counts for layers
+        tx.execute(
+            "UPDATE cache_layers SET ref_count = ref_count - 1 
+             WHERE layer_hash IN (SELECT layer_hash FROM node_to_layers WHERE node_hash = ?1)",
+            params![hash],
+        )?;
+
+        // Delete mappings
+        tx.execute(
+            "DELETE FROM node_to_layers WHERE node_hash = ?1",
+            params![hash],
+        )?;
+
+        // Delete node
+        tx.execute("DELETE FROM cache_entries WHERE hash = ?1", params![hash])?;
+
+        tx.commit()?;
         Ok(())
+    }
+
+    pub fn get_unused_layers(&self) -> Result<Vec<(String, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt =
+            conn.prepare("SELECT layer_hash, storage_path FROM cache_layers WHERE ref_count <= 0")?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+
+        let mut layers = Vec::new();
+        for layer in rows {
+            layers.push(layer?);
+        }
+        Ok(layers)
+    }
+
+    pub fn delete_layer_metadata(&self, hash: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM cache_layers WHERE layer_hash = ?1",
+            params![hash],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_layer_stats(&self) -> Result<LayerStats> {
+        let conn = self.conn.lock().unwrap();
+        let total_layers: i64 =
+            conn.query_row("SELECT COUNT(*) FROM cache_layers", [], |row| row.get(0))?;
+        let total_size: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(size), 0) FROM cache_layers",
+            [],
+            |row| row.get(0),
+        )?;
+        let deduplicated_size: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(size), 0) FROM cache_layers WHERE ref_count > 1",
+            [],
+            |row| row.get(0),
+        )?;
+
+        Ok(LayerStats {
+            total_layers: total_layers as u32,
+            total_size: total_size as u64,
+            deduplicated_size: deduplicated_size as u64,
+        })
     }
 
     pub fn get_old_entries(&self, days: u32) -> Result<Vec<String>> {
@@ -168,6 +360,13 @@ pub struct BuildRecord {
     pub dirty_nodes: u32,
     pub cached_nodes: u32,
     pub duration_ms: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LayerStats {
+    pub total_layers: u32,
+    pub total_size: u64,
+    pub deduplicated_size: u64,
 }
 
 #[cfg(test)]

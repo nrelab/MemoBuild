@@ -9,6 +9,7 @@ use std::time::Instant;
 pub struct IncrementalExecutor<R: RemoteCache + 'static> {
     cache: Arc<HybridCache<R>>,
     execution_stats: ExecutionStats,
+    observer: Option<Arc<dyn crate::dashboard::BuildObserver>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -26,7 +27,13 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
         Self {
             cache,
             execution_stats: ExecutionStats::default(),
+            observer: None,
         }
+    }
+
+    pub fn with_observer(mut self, observer: Arc<dyn crate::dashboard::BuildObserver>) -> Self {
+        self.observer = Some(observer);
+        self
     }
 
     /// Execute the build graph with parallel and incremental capabilities
@@ -40,6 +47,12 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
         // Get execution levels for parallel processing
         let levels = graph.levels();
         self.execution_stats.parallel_levels = levels.len();
+
+        if let Some(ref obs) = self.observer {
+            obs.on_event(crate::dashboard::BuildEvent::BuildStarted {
+                total_nodes: self.execution_stats.total_nodes,
+            });
+        }
 
         println!(
             "🚀 Starting incremental execution with {} levels",
@@ -67,9 +80,19 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
                 self.execute_sequential_nodes(graph, &sequential_nodes)
                     .await?;
             }
+            // Finalize execute
         }
 
         self.execution_stats.total_execution_time_ms = start_time.elapsed().as_millis() as u64;
+
+        if let Some(ref obs) = self.observer {
+            obs.on_event(crate::dashboard::BuildEvent::BuildCompleted {
+                total_duration_ms: self.execution_stats.total_execution_time_ms,
+                cache_hits: self.execution_stats.cache_hits,
+                executed_nodes: self.execution_stats.executed_nodes,
+            });
+        }
+
         self.print_execution_summary();
 
         Ok(self.execution_stats.clone())
@@ -92,11 +115,36 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
             let dirty = node.dirty;
             let kind = node.kind.clone();
             let cache = self.cache.clone();
+            let observer = self.observer.clone();
 
             futures.push(async move {
+                if let Some(ref obs) = observer {
+                    obs.on_event(crate::dashboard::BuildEvent::NodeStarted {
+                        node_id,
+                        name: name.clone(),
+                    });
+                }
                 let start_time = Instant::now();
                 let result = Self::execute_node_logic(cache, &name, &hash, dirty, &kind).await;
                 let execution_time = start_time.elapsed().as_millis() as u64;
+
+                if let Some(ref obs) = observer {
+                    match &result {
+                        Ok((_, cache_hit)) => {
+                            obs.on_event(crate::dashboard::BuildEvent::NodeCompleted {
+                                node_id,
+                                name: name.clone(),
+                                duration_ms: execution_time,
+                                cache_hit: *cache_hit,
+                            })
+                        }
+                        Err(e) => obs.on_event(crate::dashboard::BuildEvent::NodeFailed {
+                            node_id,
+                            name: name.clone(),
+                            error: e.to_string(),
+                        }),
+                    }
+                }
                 (node_id, result, execution_time)
             });
         }
@@ -135,6 +183,13 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
             let start_time = Instant::now();
             let node = &graph.nodes[node_id];
 
+            if let Some(ref obs) = self.observer {
+                obs.on_event(crate::dashboard::BuildEvent::NodeStarted {
+                    node_id,
+                    name: node.name.clone(),
+                });
+            }
+
             let result = Self::execute_node_logic(
                 self.cache.clone(),
                 &node.name,
@@ -142,10 +197,29 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
                 node.dirty,
                 &node.kind,
             )
-            .await?;
+            .await;
 
-            let (dirty, cache_hit) = result;
             let execution_time = start_time.elapsed().as_millis() as u64;
+
+            if let Some(ref obs) = self.observer {
+                match &result {
+                    Ok((_, cache_hit)) => {
+                        obs.on_event(crate::dashboard::BuildEvent::NodeCompleted {
+                            node_id,
+                            name: node.name.clone(),
+                            duration_ms: execution_time,
+                            cache_hit: *cache_hit,
+                        })
+                    }
+                    Err(e) => obs.on_event(crate::dashboard::BuildEvent::NodeFailed {
+                        node_id,
+                        name: node.name.clone(),
+                        error: e.to_string(),
+                    }),
+                }
+            }
+
+            let (dirty, cache_hit) = result?;
 
             graph.nodes[node_id].dirty = dirty;
             graph.nodes[node_id].cache_hit = cache_hit;
@@ -249,8 +323,12 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
 pub async fn execute_graph<R: RemoteCache + 'static>(
     graph: &mut BuildGraph,
     cache: Arc<HybridCache<R>>,
+    observer: Option<Arc<dyn crate::dashboard::BuildObserver>>,
 ) -> Result<()> {
     let mut executor = IncrementalExecutor::new(cache);
+    if let Some(obs) = observer {
+        executor = executor.with_observer(obs);
+    }
     executor.execute(graph).await?;
     Ok(())
 }
