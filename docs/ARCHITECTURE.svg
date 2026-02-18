@@ -1,0 +1,63 @@
+<svg width="800" height="500" viewBox="0 0 800 500" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="800" height="500" fill="#0f172a" rx="15"/>
+  
+  <!-- Stylized Gradient Definitions -->
+  <defs>
+    <linearGradient id="primaryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#38bdf8;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#818cf8;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="boxGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e293b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0f172a;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Title -->
+  <text x="400" y="40" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="url(#primaryGrad)" text-anchor="middle">MemoBuild Architecture</text>
+
+  <!-- CLI/API Box -->
+  <rect x="300" y="70" width="200" height="60" fill="url(#boxGrad)" stroke="#38bdf8" stroke-width="2" rx="10"/>
+  <text x="400" y="105" font-family="Arial, sans-serif" font-size="16" fill="#f1f5f9" text-anchor="middle">CLI / API Interface</text>
+
+  <!-- Arrow -->
+  <line x1="400" y1="130" x2="400" y2="170" stroke="#f1f5f9" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Core Engine Box -->
+  <rect x="250" y="170" width="300" height="100" fill="url(#boxGrad)" stroke="#818cf8" stroke-width="2" rx="10"/>
+  <text x="400" y="200" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#f1f5f9" text-anchor="middle">DAG Build Engine</text>
+  <text x="400" y="225" font-family="Arial, sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">Change Detection • Content Hashing</text>
+  <text x="400" y="245" font-family="Arial, sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">Dependency Propagation</text>
+
+  <!-- Lower Section split -->
+  <!-- Local Cache -->
+  <rect x="50" y="320" width="180" height="80" fill="url(#boxGrad)" stroke="#38bdf8" stroke-width="2" rx="10"/>
+  <text x="140" y="355" font-family="Arial, sans-serif" font-size="14" fill="#f1f5f9" text-anchor="middle">L2: Local Cache</text>
+  <text x="140" y="375" font-family="Arial, sans-serif" font-size="11" fill="#94a3b8" text-anchor="middle">Disk Persistent</text>
+
+  <!-- Remote Server -->
+  <rect x="310" y="320" width="180" height="80" fill="url(#boxGrad)" stroke="#818cf8" stroke-width="2" rx="10"/>
+  <text x="400" y="355" font-family="Arial, sans-serif" font-size="14" fill="#f1f5f9" text-anchor="middle">L3: Remote Cache</text>
+  <text x="400" y="375" font-family="Arial, sans-serif" font-size="11" fill="#94a3b8" text-anchor="middle">Global Shared Server</text>
+
+  <!-- Registry Export -->
+  <rect x="570" y="320" width="180" height="80" fill="url(#boxGrad)" stroke="#38bdf8" stroke-width="2" rx="10"/>
+  <text x="660" y="355" font-family="Arial, sans-serif" font-size="14" fill="#f1f5f9" text-anchor="middle">OCI Registry</text>
+  <text x="660" y="375" font-family="Arial, sans-serif" font-size="11" fill="#94a3b8" text-anchor="middle">Push / Pull Spec</text>
+
+  <!-- Connections -->
+  <path d="M 350 270 Q 140 280 140 320" stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/>
+  <path d="M 400 270 L 400 320" stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/>
+  <path d="M 450 270 Q 660 280 660 320" stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/>
+
+  <!-- Footer -->
+  <text x="400" y="470" font-family="Arial, sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">MemoBuild System Flow • Continuous Incremental Evolution</text>
+
+  <!-- Arrowhead marker definition -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8" />
+    </marker>
+  </defs>
+</svg>
