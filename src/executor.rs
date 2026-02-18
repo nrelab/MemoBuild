@@ -203,18 +203,18 @@ impl<R: RemoteCache + 'static> IncrementalExecutor<R> {
 
     fn build_node_artifact_static(kind: &crate::graph::NodeKind) -> Result<Vec<u8>> {
         let artifact_content = match kind {
-            crate::graph::NodeKind::From => format!("FROM artifact"),
-            crate::graph::NodeKind::Run => format!("RUN artifact"),
+            crate::graph::NodeKind::From => "FROM artifact".to_string(),
+            crate::graph::NodeKind::Run => "RUN artifact".to_string(),
             crate::graph::NodeKind::Copy { src, dst } => {
                 format!("COPY artifact: {} -> {}", src.display(), dst.display())
             }
-            crate::graph::NodeKind::Env => format!("ENV artifact"),
-            crate::graph::NodeKind::Workdir => format!("WORKDIR artifact"),
-            crate::graph::NodeKind::Cmd => format!("CMD artifact"),
+            crate::graph::NodeKind::Env => "ENV artifact".to_string(),
+            crate::graph::NodeKind::Workdir => "WORKDIR artifact".to_string(),
+            crate::graph::NodeKind::Cmd => "CMD artifact".to_string(),
             crate::graph::NodeKind::Git { url, target } => {
                 format!("GIT artifact: {} -> {}", url, target.display())
             }
-            crate::graph::NodeKind::Other => format!("OTHER artifact"),
+            crate::graph::NodeKind::Other => "OTHER artifact".to_string(),
         };
 
         Ok(artifact_content.into_bytes())
