@@ -16,8 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
+#      - name: Rust Cache
+#        uses: Swatinem/rust-cache@v2
+
+      - name: Dependency Tree
+        run: cargo tree --features server
 
       - name: Check Formatting
         run: cargo fmt -- --check
