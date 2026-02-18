@@ -194,7 +194,6 @@ impl RegistryClient {
             .context("No Location header in upload initiation")?
             .to_str()?;
 
-
         // Re-construct the URL if it's relative
         let final_url = if location.starts_with('/') {
             // Extract host from base_url

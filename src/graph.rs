@@ -33,7 +33,6 @@ impl Default for BuildGraph {
 }
 
 impl BuildGraph {
-
     /// Get nodes in topological order for execution
     pub fn topological_order(&self) -> Vec<usize> {
         let mut visited = vec![false; self.nodes.len()];
