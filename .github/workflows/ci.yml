@@ -1,0 +1,35 @@
+name: MemoBuild CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_and_test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check Formatting
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        run: cargo clippy --features server -- -D warnings
+
+      - name: Build (Default)
+        run: cargo build --verbose
+
+      - name: Build (With Server)
+        run: cargo build --verbose --features server
+
+      - name: Run Tests (All)
+        run: cargo test --verbose --features server
