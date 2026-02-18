@@ -1,15 +1,7 @@
-mod core;
-mod graph;
-mod cache;
-mod executor;
-mod docker;
-mod hasher;
-mod oci;
-mod remote_cache;
-mod git;
+use memobuild::{core, cache, executor, docker, oci, remote_cache};
 
 #[cfg(feature = "server")]
-mod server;
+use memobuild::server;
 
 use anyhow::Result;
 use std::fs;

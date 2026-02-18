@@ -36,6 +36,9 @@ impl LocalCache {
     }
 
     fn get_cache_dir() -> Result<PathBuf> {
+        if let Ok(dir) = std::env::var("MEMOBUILD_CACHE_DIR") {
+            return Ok(PathBuf::from(dir));
+        }
         let home = std::env::var("HOME")
             .context("HOME environment variable not set")?;
         Ok(PathBuf::from(home).join(".memobuild").join("cache"))
