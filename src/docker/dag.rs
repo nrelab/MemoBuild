@@ -1,7 +1,7 @@
 use crate::docker::parser::Instruction;
 use crate::graph::{BuildGraph, Node, NodeMetadata};
-use std::path::PathBuf;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 /// Convert a flat list of Dockerfile instructions into a dependency graph.
 /// Supports DAG construction with conditional branching and smart dependency tracking.
@@ -24,7 +24,7 @@ pub fn build_graph_from_instructions(instructions: Vec<Instruction>) -> BuildGra
         let mut env = std::collections::HashMap::new();
         let mut metadata = NodeMetadata::default();
 
-        let (content, source_path, kind, deps, parallelizable) = match instr {
+        let (content, source_path, kind, deps, _parallelizable) = match instr {
             Instruction::From(img) => {
                 // FROM nodes have no dependencies (base image)
                 (
@@ -55,16 +55,16 @@ pub fn build_graph_from_instructions(instructions: Vec<Instruction>) -> BuildGra
                 } else {
                     project_root.join(src)
                 };
-                
+
                 // Track this COPY operation for potential RUN dependencies
                 copy_sources.insert(src.clone(), i);
-                
+
                 // COPY depends on previous filesystem operations
                 let deps = if i > 0 { vec![i - 1] } else { vec![] };
-                
+
                 metadata.parallelizable = true; // COPY operations can be parallelized
                 metadata.tags.push("copy".to_string());
-                
+
                 (
                     format!("COPY {} {}", src, dst),
                     Some(path),
@@ -79,7 +79,7 @@ pub fn build_graph_from_instructions(instructions: Vec<Instruction>) -> BuildGra
             Instruction::Run(cmd) => {
                 // Analyze RUN command to determine dependencies
                 let mut deps = if i > 0 { vec![i - 1] } else { vec![] };
-                
+
                 // Check if RUN command references files that were copied
                 for (src_path, copy_idx) in &copy_sources {
                     if cmd.contains(src_path) || cmd.contains(&format!("./{}", src_path)) {
@@ -88,12 +88,13 @@ pub fn build_graph_from_instructions(instructions: Vec<Instruction>) -> BuildGra
                         }
                     }
                 }
-                
+
                 // RUN commands that don't modify shared state can be parallelized
-                let is_parallelizable = !cmd.contains("rm") && !cmd.contains("mv") && !cmd.contains("chmod");
+                let is_parallelizable =
+                    !cmd.contains("rm") && !cmd.contains("mv") && !cmd.contains("chmod");
                 metadata.parallelizable = is_parallelizable;
                 metadata.tags.push("run".to_string());
-                
+
                 (
                     format!("RUN {}", cmd),
                     None,
@@ -105,12 +106,12 @@ pub fn build_graph_from_instructions(instructions: Vec<Instruction>) -> BuildGra
             Instruction::Env(key, value) => {
                 env.insert(key.clone(), value.clone());
                 env_vars.insert(key.clone(), value.clone());
-                
+
                 // ENV operations can be parallelized if they don't conflict
                 let deps = if i > 0 { vec![i - 1] } else { vec![] };
                 metadata.parallelizable = true;
                 metadata.tags.push("env".to_string());
-                
+
                 (
                     format!("ENV {}={}", key, value),
                     None,
@@ -123,7 +124,7 @@ pub fn build_graph_from_instructions(instructions: Vec<Instruction>) -> BuildGra
                 let deps = if i > 0 { vec![i - 1] } else { vec![] };
                 metadata.parallelizable = true;
                 metadata.tags.push("cmd".to_string());
-                
+
                 (
                     format!("CMD {}", cmd),
                     None,
@@ -136,7 +137,7 @@ pub fn build_graph_from_instructions(instructions: Vec<Instruction>) -> BuildGra
                 let deps = if i > 0 { vec![i - 1] } else { vec![] };
                 metadata.parallelizable = true; // Git operations can be parallelized
                 metadata.tags.push("git".to_string());
-                
+
                 (
                     format!("GIT {} {}", url, target),
                     None,
@@ -151,7 +152,7 @@ pub fn build_graph_from_instructions(instructions: Vec<Instruction>) -> BuildGra
             Instruction::Other(s) => {
                 let deps = if i > 0 { vec![i - 1] } else { vec![] };
                 metadata.tags.push("other".to_string());
-                
+
                 (
                     s.clone(),
                     None,

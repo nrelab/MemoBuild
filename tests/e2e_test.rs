@@ -1,10 +1,15 @@
-use memobuild::{cache, core, docker, executor, remote_cache, graph::NodeKind};
 #[cfg(feature = "server")]
-use memobuild::server;
+use memobuild::{cache, core, executor, remote_cache, server};
+use memobuild::{docker, graph::NodeKind};
+#[cfg(feature = "server")]
 use std::fs;
+#[cfg(feature = "server")]
 use std::sync::Arc;
+#[cfg(feature = "server")]
 use std::thread;
+#[cfg(feature = "server")]
 use std::time::Duration;
+#[cfg(feature = "server")]
 use tempfile::tempdir;
 
 #[test]
@@ -17,29 +22,31 @@ RUN npm install
 COPY . .
 RUN npm run build
 "#;
-    
+
     let instructions = docker::parser::parse_dockerfile(dockerfile_content);
     let graph = docker::dag::build_graph_from_instructions(instructions);
-    
+
     // Verify we have 5 nodes
     assert_eq!(graph.nodes.len(), 5, "Should have 5 nodes");
-    
+
     // Find COPY package.json node (should be node 2)
     let copy_package_idx = graph.nodes.iter()
         .position(|n| matches!(&n.kind, NodeKind::Copy { src, .. } if src.to_string_lossy() == "package.json"))
         .expect("Should find COPY package.json node");
-    
+
     // Find RUN npm install node (should be node 3)
-    let run_npm_idx = graph.nodes.iter()
+    let run_npm_idx = graph
+        .nodes
+        .iter()
         .position(|n| matches!(&n.kind, NodeKind::Run) && n.content.contains("npm install"))
         .expect("Should find RUN npm install node");
-    
+
     // RUN npm install should depend on COPY package.json
     assert!(
         graph.nodes[run_npm_idx].deps.contains(&copy_package_idx),
         "RUN npm install should depend on COPY package.json"
     );
-    
+
     println!("✅ DAG linking test passed: RUN npm install correctly depends on COPY package.json");
 }
 
@@ -54,45 +61,64 @@ COPY package.json .
 COPY package-lock.json .
 RUN npm install --only=production
 "#;
-    
+
     let instructions = docker::parser::parse_dockerfile(dockerfile_content);
     let graph = docker::dag::build_graph_from_instructions(instructions);
-    
+
     // Get execution levels
     let levels = graph.levels();
-    
+
     // Should have multiple levels
     assert!(levels.len() > 1, "Should have multiple execution levels");
-    
+
     // Level 0 should contain FROM node (no dependencies)
     assert_eq!(levels[0].len(), 1, "Level 0 should have 1 node (FROM)");
-    
+
     // Find ENV and WORKDIR nodes - they should be in the same level if independent
-    let env_idx = graph.nodes.iter()
+    let env_idx = graph
+        .nodes
+        .iter()
         .position(|n| matches!(&n.kind, NodeKind::Env))
         .expect("Should find ENV node");
-    
-    let workdir_idx = graph.nodes.iter()
+
+    let workdir_idx = graph
+        .nodes
+        .iter()
         .position(|n| matches!(&n.kind, NodeKind::Workdir))
         .expect("Should find WORKDIR node");
-    
+
     // ENV and WORKDIR should be parallelizable
-    assert!(graph.nodes[env_idx].metadata.parallelizable, "ENV node should be parallelizable");
-    assert!(graph.nodes[workdir_idx].metadata.parallelizable, "WORKDIR node should be parallelizable");
-    
+    assert!(
+        graph.nodes[env_idx].metadata.parallelizable,
+        "ENV node should be parallelizable"
+    );
+    assert!(
+        graph.nodes[workdir_idx].metadata.parallelizable,
+        "WORKDIR node should be parallelizable"
+    );
+
     // Find COPY nodes - they should be parallelizable with each other if they don't conflict
     let copy_package_idx = graph.nodes.iter()
         .position(|n| matches!(&n.kind, NodeKind::Copy { src, .. } if src.to_string_lossy() == "package.json"))
         .expect("Should find COPY package.json node");
-    
+
     let copy_lock_idx = graph.nodes.iter()
         .position(|n| matches!(&n.kind, NodeKind::Copy { src, .. } if src.to_string_lossy() == "package-lock.json"))
         .expect("Should find COPY package-lock.json node");
-    
-    assert!(graph.nodes[copy_package_idx].metadata.parallelizable, "COPY package.json should be parallelizable");
-    assert!(graph.nodes[copy_lock_idx].metadata.parallelizable, "COPY package-lock.json should be parallelizable");
-    
-    println!("✅ Parallel levels test passed: {} levels with proper parallelizable nodes", levels.len());
+
+    assert!(
+        graph.nodes[copy_package_idx].metadata.parallelizable,
+        "COPY package.json should be parallelizable"
+    );
+    assert!(
+        graph.nodes[copy_lock_idx].metadata.parallelizable,
+        "COPY package-lock.json should be parallelizable"
+    );
+
+    println!(
+        "✅ Parallel levels test passed: {} levels with proper parallelizable nodes",
+        levels.len()
+    );
 }
 
 #[test]
@@ -103,27 +129,36 @@ FROM node:16-alpine
 COPY package.json .
 RUN npm install
 "#;
-    
+
     let instructions = docker::parser::parse_dockerfile(dockerfile_content);
     let graph = docker::dag::build_graph_from_instructions(instructions);
-    
+
     // Compute node keys
     let dep_hashes: Vec<String> = vec![]; // No dependencies for FROM node
     let from_key1 = graph.nodes[0].compute_node_key(&dep_hashes, None);
     let from_key2 = graph.nodes[0].compute_node_key(&dep_hashes, None);
-    
+
     // Same node should produce same key
     assert_eq!(from_key1, from_key2, "Same node should produce same key");
-    
+
     // Different nodes should produce different keys
     let copy_key = graph.nodes[1].compute_node_key(&[from_key1.clone()], None);
-    assert_ne!(from_key1, copy_key, "Different nodes should produce different keys");
-    
+    assert_ne!(
+        from_key1, copy_key,
+        "Different nodes should produce different keys"
+    );
+
     // Key should change with different context hash
-    let copy_key_with_context = graph.nodes[1].compute_node_key(&[from_key1], Some("different_context"));
-    assert_ne!(copy_key, copy_key_with_context, "Key should change with different context");
-    
-    println!("✅ Content-addressed identities test passed: Node keys are consistent and context-aware");
+    let copy_key_with_context =
+        graph.nodes[1].compute_node_key(&[from_key1], Some("different_context"));
+    assert_ne!(
+        copy_key, copy_key_with_context,
+        "Key should change with different context"
+    );
+
+    println!(
+        "✅ Content-addressed identities test passed: Node keys are consistent and context-aware"
+    );
 }
 
 #[cfg(feature = "server")]
