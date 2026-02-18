@@ -8,7 +8,7 @@
 
 MemoBuild is a next-generation build system that intelligently rebuilds only what's changed, using advanced dependency tracking, multi-layer caching, and OCI-compatible image generation.
 
-**[🚀 Read the Vision](./docs/VISION.md)** | **[📄 Technical Whitepaper](./docs/WHITEPAPER.md)** | **[💻 CLI Manual](./docs/CLI_REFERENCE.md)**
+**[🚀 Read the Vision](./docs/VISION.md)** | **[📄 Technical Whitepaper](./docs/WHITEPAPER.md)** | **[💻 CLI Manual](./docs/CLI_REFERENCE.md)** | **[🌐 CI/CD Integration](./CI_CD_INTEGRATION.md)**
 
 ---
 
@@ -73,6 +73,7 @@ Visit the [examples/](./examples) directory to see ready-to-use projects:
 - **[Whitepaper](./docs/WHITEPAPER.md)**: Deep technical spec and mathematical foundations.
 - **[CLI Reference](./docs/CLI_REFERENCE.md)**: Detailed command and option manual.
 - **[Architecture Diagram](./docs/ARCHITECTURE.svg)**: Visual process flow.
+- **[CI/CD Integration](./CI_CD_INTEGRATION.md)**: Blueprint for GitHub Actions, GitLab, and cloud runners.
 
 ---
 
