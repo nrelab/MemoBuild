@@ -4,6 +4,8 @@
 
 MemoBuild is a next-generation build system that intelligently rebuilds only what's changed, using advanced dependency tracking, multi-layer caching, and OCI-compatible image generation.
 
+**[🚀 Read the Vision & Architecture Guide](./docs/VISION.md)**
+
 ## 🏗️ Architecture Overview
 
 ```
