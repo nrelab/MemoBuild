@@ -59,6 +59,40 @@ jobs:
         return Ok(());
     }
 
+    // Support generating Kubernetes manifests: memobuild generate-k8s
+    if args.len() >= 2 && args[1] == "generate-k8s" {
+        let yaml = r#"apiVersion: batch/v1
+kind: Job
+metadata:
+  name: memobuild-job
+spec:
+  template:
+    spec:
+      containers:
+      - name: memobuild
+        image: memobuild-client:latest
+        command: ["memobuild", "--push"]
+        env:
+        - name: MEMOBUILD_REMOTE_URL
+          value: "http://memobuild-server:8080"
+        - name: MEMOBUILD_REGISTRY
+          value: "ghcr.io"
+        - name: MEMOBUILD_REPO
+          value: "your-org/your-repo"
+        - name: MEMOBUILD_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: regcred
+              key: .dockerconfigjson
+      restartPolicy: OnFailure
+  backoffLimit: 4
+"#;
+        fs::create_dir_all(".k8s")?;
+        fs::write(".k8s/memobuild-job.yml", yaml)?;
+        println!("✅ Kubernetes Job manifest generated at .k8s/memobuild-job.yml");
+        return Ok(());
+    }
+
     // Support starting the server: memobuild --server --port 8080
     if args.iter().any(|arg| arg == "--server") {
         #[cfg(feature = "server")]
@@ -69,10 +103,16 @@ jobs:
                 .and_then(|p| p.parse::<u16>().ok())
                 .unwrap_or(8080);
             
+            let webhook_url = args.iter()
+                .position(|arg| arg == "--webhook")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .or_else(|| env::var("MEMOBUILD_WEBHOOK_URL").ok());
+
             let data_dir = env::current_dir()?.join(".memobuild-server");
             fs::create_dir_all(&data_dir)?;
             
-            server::start_server(port, data_dir).await?;
+            server::start_server(port, data_dir, webhook_url).await?;
             return Ok(());
         }
         #[cfg(not(feature = "server"))]

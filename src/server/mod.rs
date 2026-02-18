@@ -20,6 +20,7 @@ pub mod storage;
 pub struct AppState {
     pub metadata: MetadataStore,
     pub storage: Arc<dyn ArtifactStorage>,
+    pub webhook_url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -27,14 +28,14 @@ pub struct GcQuery {
     pub days: u32,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct AnalyticsData {
     pub dirty: u32,
     pub cached: u32,
     pub duration_ms: u64,
 }
 
-pub async fn start_server(port: u16, data_dir: PathBuf) -> Result<()> {
+pub async fn start_server(port: u16, data_dir: PathBuf, webhook_url: Option<String>) -> Result<()> {
     let db_path = data_dir.join("metadata.db");
     let metadata = MetadataStore::new(&db_path)?;
     let storage = Arc::new(LocalStorage::new(&data_dir)?);
@@ -42,6 +43,7 @@ pub async fn start_server(port: u16, data_dir: PathBuf) -> Result<()> {
     let state = Arc::new(AppState {
         metadata,
         storage,
+        webhook_url,
     });
 
     let app = Router::new()
@@ -345,7 +347,32 @@ async fn report_analytics(
     State(state): State<Arc<AppState>>,
     axum::Json(data): axum::Json<AnalyticsData>,
 ) -> impl IntoResponse {
-    match state.metadata.record_build(data.dirty, data.cached, data.duration_ms) {
+    let result = state.metadata.record_build(data.dirty, data.cached, data.duration_ms);
+    
+    // Send build notification if webhook is configured
+    if let Some(webhook_url) = state.webhook_url.clone() {
+        let stats = data.clone();
+        tokio::spawn(async move {
+            let client = reqwest::Client::new();
+            let payload = serde_json::json!({
+                "text": format!(
+                    "🚀 *Build Completed*\nNodes: {} dirty, {} cached\nDuration: {}ms\nStatus: {}",
+                    stats.dirty,
+                    stats.cached,
+                    stats.duration_ms,
+                    if stats.dirty == 0 { "✅ Pristine" } else { "🔧 Partial" }
+                )
+            });
+
+            if let Err(e) = client.post(&webhook_url).json(&payload).send().await {
+                eprintln!("⚠️ Failed to send build notification: {}", e);
+            } else {
+                println!("🔔 Build notification sent to webhook");
+            }
+        });
+    }
+
+    match result {
         Ok(_) => StatusCode::OK,
         Err(e) => {
             eprintln!("Analytics error: {}", e);
