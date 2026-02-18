@@ -280,10 +280,10 @@ for node in topological_order:
 - [x] Layer deduplication (Content-addressed)
 - [x] Incremental layer updates (Optimized uploads)
 
-### Phase 3: Optimization 📋
-- [ ] Content-addressable storage
-- [ ] Build cache garbage collection
-- [ ] Parallel layer uploads
+### Phase 3: Optimization ✅
+- [x] Content-addressable storage (Integrity verification)
+- [x] Build cache garbage collection (GC)
+- [x] Parallel layer uploads & execution (Rayon)
 - [ ] Smart prefetching
 - [ ] Build analytics
 

@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
     // 1. Initialize Cache
     let remote_url = env::var("MEMOBUILD_REMOTE_URL").ok();
     let remote_cache = remote_url.map(remote_cache::HttpRemoteCache::new);
-    let mut cache = cache::HybridCache::new(remote_cache)?;
+    let cache = std::sync::Arc::new(cache::HybridCache::new(remote_cache)?);
 
     // 2. Prepare Dockerfile
     if !std::path::Path::new("Dockerfile").exists() {
@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
     println!("   {} dirty  |  {} cached", dirty, graph.nodes.len() - dirty);
 
     println!("⚡ Executing build...");
-    executor::execute_graph(&mut graph, &mut cache)?;
+    executor::execute_graph(&mut graph, cache.clone())?;
 
     println!("📦 Exporting OCI Image...");
     oci::export_image(&graph, "memobuild-demo:latest")?;

@@ -90,6 +90,26 @@ impl MetadataStore {
         )?;
         Ok(count > 0)
     }
+
+    pub fn delete(&self, hash: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM cache_entries WHERE hash = ?1", params![hash])?;
+        Ok(())
+    }
+
+    pub fn get_old_entries(&self, days: u32) -> Result<Vec<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT hash FROM cache_entries WHERE last_used < datetime('now', '-' || ?1 || ' days')"
+        )?;
+        let rows = stmt.query_map(params![days], |row| row.get(0))?;
+        
+        let mut hashes = Vec::new();
+        for hash in rows {
+            hashes.push(hash?);
+        }
+        Ok(hashes)
+    }
 }
 
 #[cfg(test)]

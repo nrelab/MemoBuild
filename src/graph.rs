@@ -51,4 +51,29 @@ impl BuildGraph {
 
         stack.push(node);
     }
+
+    /// Group nodes into levels that can be executed in parallel
+    pub fn levels(&self) -> Vec<Vec<usize>> {
+        let mut node_levels = vec![0; self.nodes.len()];
+        let order = self.topological_order();
+
+        for &node_id in &order {
+            let mut max_dep_level = 0;
+            for &dep in &self.nodes[node_id].deps {
+                if dep < self.nodes.len() {
+                    max_dep_level = std::cmp::max(max_dep_level, node_levels[dep] + 1);
+                }
+            }
+            node_levels[node_id] = max_dep_level;
+        }
+
+        let max_level = node_levels.iter().max().cloned().unwrap_or(0);
+        let mut result = vec![Vec::new(); max_level + 1];
+        
+        for (node_id, &level) in node_levels.iter().enumerate() {
+            result[level].push(node_id);
+        }
+        
+        result
+    }
 }

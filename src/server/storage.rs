@@ -7,6 +7,7 @@ pub trait ArtifactStorage: Send + Sync {
     fn put(&self, hash: &str, data: &[u8]) -> Result<String>;
     fn get(&self, hash: &str) -> Result<Option<Vec<u8>>>;
     fn exists(&self, hash: &str) -> Result<bool>;
+    fn delete(&self, hash: &str) -> Result<()>;
 }
 
 pub struct LocalStorage {
@@ -65,6 +66,14 @@ impl ArtifactStorage for LocalStorage {
 
     fn exists(&self, hash: &str) -> Result<bool> {
         Ok(self.get_sharded_path(hash).exists())
+    }
+
+    fn delete(&self, hash: &str) -> Result<()> {
+        let path = self.get_sharded_path(hash);
+        if path.exists() {
+            fs::remove_file(path)?;
+        }
+        Ok(())
     }
 }
 

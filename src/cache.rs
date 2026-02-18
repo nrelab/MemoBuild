@@ -12,9 +12,11 @@ pub struct CacheEntry {
     pub size: u64,
 }
 
+use std::sync::{Arc, RwLock};
+
 pub struct LocalCache {
     cache_dir: PathBuf,
-    store: HashMap<String, CacheEntry>,
+    store: Arc<RwLock<HashMap<String, CacheEntry>>>,
     index_path: PathBuf,
 }
 
@@ -28,7 +30,7 @@ impl LocalCache {
         
         Ok(Self {
             cache_dir,
-            store,
+            store: Arc::new(RwLock::new(store)),
             index_path,
         })
     }
@@ -52,13 +54,15 @@ impl LocalCache {
     }
 
     fn save_index(&self) -> Result<()> {
-        let content = serde_json::to_string_pretty(&self.store)?;
+        let store = self.store.read().map_err(|_| anyhow::anyhow!("Poisoned lock"))?;
+        let content = serde_json::to_string_pretty(&*store)?;
         fs::write(&self.index_path, content)?;
         Ok(())
     }
 
     pub fn get_data(&self, key: &str) -> Result<Option<Vec<u8>>> {
-        if let Some(entry) = self.store.get(key) {
+        let store = self.store.read().map_err(|_| anyhow::anyhow!("Poisoned lock"))?;
+        if let Some(entry) = store.get(key) {
             let path = self.cache_dir.join(&entry.artifact_path);
             if path.exists() {
                 return Ok(Some(fs::read(path)?));
@@ -67,7 +71,7 @@ impl LocalCache {
         Ok(None)
     }
 
-    pub fn put(&mut self, key: &str, data: &[u8]) -> Result<()> {
+    pub fn put(&self, key: &str, data: &[u8]) -> Result<()> {
         let artifact_filename = format!("{}.bin", key);
         let artifact_path = PathBuf::from(&artifact_filename);
         let full_path = self.cache_dir.join(&artifact_path);
@@ -81,14 +85,19 @@ impl LocalCache {
             size: data.len() as u64,
         };
         
-        self.store.insert(key.to_string(), entry);
+        {
+            let mut store = self.store.write().map_err(|_| anyhow::anyhow!("Poisoned lock"))?;
+            store.insert(key.to_string(), entry);
+        }
+        
         self.save_index()?;
         
         Ok(())
     }
 
     pub fn exists(&self, key: &str) -> bool {
-        self.store.contains_key(key)
+        let store = self.store.read().ok();
+        store.map(|s| s.contains_key(key)).unwrap_or(false)
     }
 }
 
@@ -105,7 +114,7 @@ impl<R: RemoteCache> HybridCache<R> {
         })
     }
 
-    pub fn get_artifact(&mut self, key: &str) -> Result<Option<Vec<u8>>> {
+    pub fn get_artifact(&self, key: &str) -> Result<Option<Vec<u8>>> {
         // 1. Try local
         if let Some(data) = self.local.get_data(key)? {
             return Ok(Some(data));
@@ -123,11 +132,11 @@ impl<R: RemoteCache> HybridCache<R> {
         Ok(None)
     }
 
-    pub fn put_artifact(&mut self, key: &str, data: &[u8]) -> Result<()> {
+    pub fn put_artifact(&self, key: &str, data: &[u8]) -> Result<()> {
         // 1. Put local
         self.local.put(key, data)?;
 
-        // 2. Put remote (async or fire-and-forget in real world, but let's keep it simple)
+        // 2. Put remote
         if let Some(ref remote) = self.remote {
             remote.put(key, data)?;
         }
