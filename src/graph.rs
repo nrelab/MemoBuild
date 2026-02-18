@@ -5,11 +5,31 @@ use std::path::PathBuf;
 pub enum NodeKind {
     From,
     Run,
-    Copy { src: PathBuf, dst: PathBuf },
+    Copy {
+        src: PathBuf,
+        dst: PathBuf,
+    },
     Env,
     Workdir,
     Cmd,
-    Git { url: String, target: PathBuf },
+    Git {
+        url: String,
+        target: PathBuf,
+    },
+    // Docker Extension Nodes
+    RunExtend {
+        command: String,
+        parallelizable: bool,
+    },
+    CopyExtend {
+        src: PathBuf,
+        dst: PathBuf,
+        tags: Vec<String>,
+    },
+    CustomHook {
+        hook_name: String,
+        params: Vec<String>,
+    },
     Other,
 }
 

@@ -20,7 +20,38 @@ impl Sandbox for LocalSandbox {
 
     async fn execute(&self, env: &SandboxEnv, node: &Node) -> Result<ExecResult> {
         let cmd = match &node.kind {
-            crate::graph::NodeKind::Run => &node.content,
+            crate::graph::NodeKind::Run => node.content.clone(),
+            crate::graph::NodeKind::RunExtend { command, .. } => command.clone(),
+            crate::graph::NodeKind::CustomHook { hook_name, params } => {
+                format!("{} {}", hook_name, params.join(" "))
+            }
+            crate::graph::NodeKind::CopyExtend { src, dst, .. } => {
+                // Perform file copy directly in Rust
+                let src_path = env.workspace_dir.join(src);
+                let dst_path = env.workspace_dir.join(dst);
+                if let Some(d) = dst_path.parent() {
+                    std::fs::create_dir_all(d)?;
+                }
+
+                // Copy directory or file
+                if src_path.is_dir() {
+                    // Simple recursive copy using fs_extra or similar would be nice,
+                    // but for now let's use system command cp -r for simplicity in sh/cmd
+                    if cfg!(target_os = "windows") {
+                        format!("xcopy /E /I {} {}", src.display(), dst.display())
+                    } else {
+                        format!("cp -r {} {}", src.display(), dst.display())
+                    }
+                } else {
+                    std::fs::copy(&src_path, &dst_path)?;
+                    return Ok(ExecResult {
+                        exit_code: 0,
+                        stdout: format!("Copied {} to {}", src.display(), dst.display())
+                            .into_bytes(),
+                        stderr: Vec::new(),
+                    });
+                }
+            }
             _ => {
                 // For non-RUN nodes, we simulate success and return a metadata-based artifact
                 return Ok(ExecResult {

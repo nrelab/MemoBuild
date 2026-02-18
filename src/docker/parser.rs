@@ -6,7 +6,10 @@ pub enum Instruction {
     Run(String),
     Env(String, String),
     Cmd(String),
-    Git(String, String), // (url, target_dir)
+    Git(String, String),                     // (url, target_dir)
+    RunExtend(String, bool),                 // (command, parallelizable)
+    CopyExtend(String, String, Vec<String>), // (src, dst, tags)
+    Hook(String, Vec<String>),               // (hook_name, params)
     Other(String),
 }
 
@@ -72,6 +75,27 @@ pub fn parse_dockerfile(content: &str) -> Vec<Instruction> {
                 } else if parts.len() == 2 {
                     // Default target dir to the repo name or "."
                     instructions.push(Instruction::Git(parts[1].to_string(), ".".to_string()));
+                }
+            }
+            "RUN_EXTEND" => {
+                // Defaults parallelizable=true
+                instructions.push(Instruction::RunExtend(args.to_string(), true));
+            }
+            "COPY_EXTEND" => {
+                // copy_extend src dst [tags...]
+                if parts.len() >= 3 {
+                    let src = parts[1].to_string();
+                    let dst = parts[2].to_string();
+                    let tags: Vec<String> = parts[3..].iter().map(|s| s.to_string()).collect();
+                    instructions.push(Instruction::CopyExtend(src, dst, tags));
+                }
+            }
+            "HOOK" => {
+                // HOOK name [params...]
+                if parts.len() >= 2 {
+                    let hook_name = parts[1].to_string();
+                    let params = parts[2..].iter().map(|s| s.to_string()).collect();
+                    instructions.push(Instruction::Hook(hook_name, params));
                 }
             }
             _ => {

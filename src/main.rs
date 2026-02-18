@@ -284,14 +284,26 @@ spec:
     let cache = Arc::new(cache::HybridCache::new_with_box(remote_cache)?);
 
     // 2. Prepare Dockerfile
-    if !std::path::Path::new("Dockerfile").exists() {
-        fs::write(
-            "Dockerfile",
-            "FROM node:18\nWORKDIR /app\nCOPY package.json .\nRUN npm install\nCOPY . .\nRUN npm run build",
-        )?;
+    let dockerfile_path = args
+        .iter()
+        .position(|arg| arg == "--file" || arg == "-f")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.as_str())
+        .unwrap_or("Dockerfile");
+
+    if !std::path::Path::new(dockerfile_path).exists() {
+        if dockerfile_path == "Dockerfile" {
+            // Create default
+            fs::write(
+                "Dockerfile",
+                "FROM node:18\nWORKDIR /app\nCOPY package.json .\nRUN npm install\nCOPY . .\nRUN npm run build",
+            )?;
+        } else {
+            anyhow::bail!("Dockerfile not found: {}", dockerfile_path);
+        }
     }
 
-    let dockerfile = fs::read_to_string("Dockerfile")?;
+    let dockerfile = fs::read_to_string(dockerfile_path)?;
 
     println!("📄 Parsing Dockerfile...");
     let instructions = docker::parser::parse_dockerfile(&dockerfile);

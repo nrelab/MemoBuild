@@ -336,6 +336,18 @@ impl IncrementalExecutor {
             result.stdout_raw
         } else {
             // Prepare sandbox
+            if let crate::graph::NodeKind::RunExtend { command, .. } = &node.kind {
+                println!("⚡ Executing extended RUN: {}", command);
+            } else if let crate::graph::NodeKind::CopyExtend { src, dst, .. } = &node.kind {
+                println!(
+                    "⚡ Executing extended COPY: {} -> {}",
+                    src.display(),
+                    dst.display()
+                );
+            } else if let crate::graph::NodeKind::CustomHook { hook_name, .. } = &node.kind {
+                println!("⚡ Running custom hook: {}", hook_name);
+            }
+
             let env = sandbox.prepare(node).await?;
 
             // Execute command

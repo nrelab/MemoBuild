@@ -3,3 +3,11 @@
 /.memobuild-server/
 **/*.rs.bk
 .DS_Store
+
+# Test artifacts
+dest1.txt
+dest_data/
+extension_build.log
+Dockerfile.ext
+file1.txt
+data/
