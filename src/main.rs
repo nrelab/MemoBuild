@@ -353,7 +353,7 @@ spec:
 
     println!("📜 Propagating artifact manifests...");
     let manifests = core::propagate_manifests(&mut graph);
-    
+
     // Upload all synthetic manifests to remote cache so workers can find them
     if let Some(ref _r) = cache.remote {
         for (hash, manifest) in manifests {
