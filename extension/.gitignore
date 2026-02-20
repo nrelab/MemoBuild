@@ -1,0 +1,7 @@
+node_modules/
+ui/build/
+ui/dist/
+ui/package-lock.json
+backend/bin/
+backend/memobuild-extension
+*.log
