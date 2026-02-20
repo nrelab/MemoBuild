@@ -8,8 +8,8 @@ RUN go build -trimpath -ldflags="-s -w" -o bin/service
 
 FROM --platform=$BUILDPLATFORM node:24-alpine AS client-builder
 WORKDIR /ui
-COPY ui/package.json ui/package-lock.json ./
-RUN npm ci --legacy-peer-deps
+COPY ui/package.json ./
+RUN npm install --legacy-peer-deps
 COPY ui/. .
 RUN npm run build
 
