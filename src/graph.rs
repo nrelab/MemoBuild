@@ -64,6 +64,10 @@ pub struct NodeMetadata {
     pub tags: Vec<String>,
     /// Content hash of source files (for COPY nodes)
     pub source_content_hash: Option<String>,
+    /// Hash of the ArtifactManifest for inputs (used for remote reconstruction)
+    pub input_manifest_hash: Option<String>,
+    /// Hash of the ArtifactManifest for outputs (what this node produced)
+    pub output_manifest_hash: Option<String>,
 }
 
 impl Node {

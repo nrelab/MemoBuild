@@ -54,6 +54,18 @@ impl RemoteExecutor for WorkerNode {
             .await
             .context("Failed to prepare sandbox for remote execution")?;
 
+        // 2b. Reconstruct Inputs from Manifest
+        if let Ok(Some(manifest_data)) = self.cache.get_artifact(&action.input_root_digest.hash).await {
+            if let Ok(manifest) = serde_json::from_slice::<crate::cache_utils::ArtifactManifest>(&manifest_data) {
+                println!("   📥 [Worker {}] Reconstructing {} files...", self.id, manifest.files.len());
+                let cache_clone = self.cache.clone();
+                manifest.reconstruct(&env.workspace_dir, move |h| {
+                    let cache = cache_clone.clone();
+                    async move { cache.get_artifact(&h).await }
+                }).await.context("Failed to reconstruct inputs from manifest")?;
+            }
+        }
+
         // 3. Execute
         let exec_result = self
             .sandbox

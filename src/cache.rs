@@ -236,3 +236,31 @@ impl HybridCache {
         }
     }
 }
+
+impl HybridCache {
+    pub async fn upload_manifest_and_files(
+        &self,
+        manifest: &crate::cache_utils::ArtifactManifest,
+        base_dir: &std::path::Path,
+    ) -> Result<()> {
+        // 1. Upload the manifest itself
+        let manifest_json = serde_json::to_vec(manifest)?;
+        let manifest_hash = manifest.hash();
+        self.put_artifact(&manifest_hash, &manifest_json).await?;
+
+        // 2. Upload all files referenced by the manifest
+        for file in &manifest.files {
+            let file_path = if base_dir.is_file() {
+                base_dir.to_path_buf()
+            } else {
+                base_dir.join(&file.path)
+            };
+            if file_path.exists() {
+                let data = std::fs::read(&file_path)?;
+                self.put_artifact(&file.hash, &data).await?;
+            }
+        }
+
+        Ok(())
+    }
+}

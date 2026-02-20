@@ -36,7 +36,13 @@ pub fn detect_changes(graph: &mut BuildGraph) {
         let new_hash = if let Some(ref path) = node.source_path {
             // Real filesystem hashing for COPY nodes
             match hasher::hash_path(path, &ignore) {
-                Ok(h) => h,
+                Ok(h) => {
+                    // Generate and track manifest for remote execution
+                    if let Ok(manifest) = crate::cache_utils::ArtifactManifest::from_dir(path) {
+                        node.metadata.input_manifest_hash = Some(manifest.hash());
+                    }
+                    h
+                }
                 Err(e) => {
                     eprintln!("⚠️  Hash error for {}: {}", path.display(), e);
                     hash_str(&node.content)
@@ -113,4 +119,50 @@ pub fn compute_composite_hashes(graph: &mut BuildGraph, env_fp: &crate::env::Env
 
         graph.nodes[node_id].hash = composite_hash;
     }
+}
+
+/// Propagate manifests: each node's input manifest is the union of its dependencies' output manifests.
+/// Returns a map of manifest_hash -> ArtifactManifest so callers can upload them to the CAS.
+pub fn propagate_manifests(
+    graph: &mut crate::graph::BuildGraph,
+) -> std::collections::HashMap<String, crate::cache_utils::ArtifactManifest> {
+    let order = graph.topological_order();
+    let mut node_manifests: std::collections::HashMap<usize, crate::cache_utils::ArtifactManifest> =
+        std::collections::HashMap::new();
+    let mut all_manifests: std::collections::HashMap<String, crate::cache_utils::ArtifactManifest> =
+        std::collections::HashMap::new();
+
+    for node_id in order {
+        let mut input_manifest = crate::cache_utils::ArtifactManifest { files: Vec::new() };
+
+        // 1. Merge parent output manifests
+        for &dep in &graph.nodes[node_id].deps {
+            if let Some(parent_manifest) = node_manifests.get(&dep) {
+                input_manifest.merge(parent_manifest);
+            }
+        }
+
+        if !input_manifest.files.is_empty() {
+            let h = input_manifest.hash();
+            graph.nodes[node_id].metadata.input_manifest_hash = Some(h.clone());
+            all_manifests.insert(h, input_manifest.clone());
+        }
+
+        // 2. Compute this node's output manifest
+        let mut output_manifest = input_manifest.clone();
+
+        // If it's a COPY node, add its specific files
+        if let crate::graph::NodeKind::Copy { src, .. } = &graph.nodes[node_id].kind {
+            if let Ok(delta) = crate::cache_utils::ArtifactManifest::from_dir(src) {
+                output_manifest.merge(&delta);
+            }
+        }
+
+        let oh = output_manifest.hash();
+        graph.nodes[node_id].metadata.output_manifest_hash = Some(oh.clone());
+        all_manifests.insert(oh, output_manifest.clone());
+        node_manifests.insert(node_id, output_manifest);
+    }
+
+    all_manifests
 }

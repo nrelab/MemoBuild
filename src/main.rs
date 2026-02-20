@@ -351,6 +351,21 @@ spec:
     println!("🔑 Recomputing deterministic hashes...");
     core::compute_composite_hashes(&mut graph, &env_fp);
 
+    println!("📜 Propagating artifact manifests...");
+    let manifests = core::propagate_manifests(&mut graph);
+    
+    // Upload all synthetic manifests to remote cache so workers can find them
+    if let Some(ref _r) = cache.remote {
+        for (hash, manifest) in manifests {
+            let data = serde_json::to_vec(&manifest)?;
+            let cache_clone = cache.clone();
+            let hash_clone = hash.clone();
+            tokio::spawn(async move {
+                let _ = cache_clone.put_artifact(&hash_clone, &data).await;
+            });
+        }
+    }
+
     let dirty = graph.nodes.iter().filter(|n| n.dirty).count();
     println!(
         "   {} dirty  |  {} cached",

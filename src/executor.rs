@@ -310,13 +310,44 @@ impl IncrementalExecutor {
             println!("🔨 Building clean node (not in cache): {}...", name);
         }
 
-        let mut artifact_data = if let Some(ref remote) = remote_executor {
+        // Check if node type needs actual execution in build farm
+        let is_runnable = matches!(
+            node.kind,
+            crate::graph::NodeKind::Run
+                | crate::graph::NodeKind::RunExtend { .. }
+                | crate::graph::NodeKind::CustomHook { .. }
+                | crate::graph::NodeKind::Git { .. }
+        );
+
+        let mut artifact_data = if is_runnable && remote_executor.is_some() {
+            let remote = remote_executor.as_ref().unwrap();
+
+            // Ensure input manifest and required files are in CAS
+            if let Some(ref _manifest_hash) = node.metadata.input_manifest_hash {
+                // If it's a COPY node, we can re-generate and upload
+                if let Some(ref path) = node.source_path {
+                    if let Ok(manifest) = crate::cache_utils::ArtifactManifest::from_dir(path) {
+                        println!("📤 Uploading input manifest for {}...", name);
+                        cache.upload_manifest_and_files(&manifest, path).await?;
+                    }
+                } else {
+                    // For RUN nodes, the manifest was built from parents.
+                    // We should ensure the manifest itself is in the CAS.
+                    // (The files should already be there from previous steps' put_artifact)
+                    // TODO: Implement manifest persistence across steps if needed
+                }
+            }
+
             println!("📡 [RemoteExec] Dispatching node {} to build farm", name);
             let action = crate::remote_exec::ActionRequest {
                 command: vec!["/bin/sh".into(), "-c".into(), node.content.clone()],
                 env: node.env.clone(),
                 input_root_digest: crate::remote_exec::Digest {
-                    hash: hash.to_string(),
+                    hash: node
+                        .metadata
+                        .input_manifest_hash
+                        .clone()
+                        .unwrap_or_else(|| hash.to_string()),
                     size_bytes: 0, // Placeholder
                 },
                 timeout: std::time::Duration::from_secs(600),
