@@ -200,7 +200,10 @@ RUN npm run build
 "#;
 
         let instructions = docker::parser::parse_dockerfile(dockerfile);
-        let dag = docker::dag::build_graph_from_instructions(instructions, std::env::current_dir().unwrap_or_default());
+        let dag = docker::dag::build_graph_from_instructions(
+            instructions,
+            std::env::current_dir().unwrap_or_default(),
+        );
 
         // Should have 6 nodes (FROM + 5 instructions)
         assert_eq!(dag.nodes.len(), 6);
@@ -231,7 +234,10 @@ RUN python3 --version
 "#;
 
         let instructions = docker::parser::parse_dockerfile(dockerfile);
-        let dag = docker::dag::build_graph_from_instructions(instructions, std::env::current_dir().unwrap_or_default());
+        let dag = docker::dag::build_graph_from_instructions(
+            instructions,
+            std::env::current_dir().unwrap_or_default(),
+        );
 
         // Verify that RUN commands are linked
         for i in 1..dag.nodes.len() {

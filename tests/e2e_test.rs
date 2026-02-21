@@ -22,7 +22,10 @@ RUN npm run build
 "#;
 
     let instructions = docker::parser::parse_dockerfile(dockerfile_content);
-    let graph = docker::dag::build_graph_from_instructions(instructions, std::env::current_dir().unwrap_or_default());
+    let graph = docker::dag::build_graph_from_instructions(
+        instructions,
+        std::env::current_dir().unwrap_or_default(),
+    );
 
     // Verify we have 5 nodes
     assert_eq!(graph.nodes.len(), 5, "Should have 5 nodes");
@@ -61,7 +64,10 @@ RUN npm install --only=production
 "#;
 
     let instructions = docker::parser::parse_dockerfile(dockerfile_content);
-    let graph = docker::dag::build_graph_from_instructions(instructions, std::env::current_dir().unwrap_or_default());
+    let graph = docker::dag::build_graph_from_instructions(
+        instructions,
+        std::env::current_dir().unwrap_or_default(),
+    );
 
     // Get execution levels
     let levels = graph.levels();
@@ -129,7 +135,10 @@ RUN npm install
 "#;
 
     let instructions = docker::parser::parse_dockerfile(dockerfile_content);
-    let graph = docker::dag::build_graph_from_instructions(instructions, std::env::current_dir().unwrap_or_default());
+    let graph = docker::dag::build_graph_from_instructions(
+        instructions,
+        std::env::current_dir().unwrap_or_default(),
+    );
 
     // Compute node keys
     let dep_hashes: Vec<String> = vec![]; // No dependencies for FROM node
