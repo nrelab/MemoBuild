@@ -39,6 +39,12 @@ cargo install --path .
 # Build current directory
 memobuild build .
 
+# Visualize the build graph
+memobuild graph
+
+# Explain why a node was or wasn't cached
+memobuild explain-cache
+
 # Build and push to registry
 export MEMOBUILD_REGISTRY=ghcr.io
 export MEMOBUILD_REPO=myuser/app

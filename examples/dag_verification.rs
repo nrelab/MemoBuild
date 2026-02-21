@@ -18,7 +18,11 @@ RUN npm run build
     println!("📋 Parsed {} instructions:", instructions.len());
 
     // Build graph
-    let graph = docker::dag::build_graph_from_instructions(instructions);
+    // Build graph
+    let graph = docker::dag::build_graph_from_instructions(
+        instructions,
+        std::env::current_dir().unwrap_or_default(),
+    );
     println!("📊 Created graph with {} nodes", graph.nodes.len());
 
     // Display node details

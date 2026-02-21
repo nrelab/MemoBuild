@@ -19,7 +19,8 @@ async fn test_reproducible_exports_are_identical() {
     let cache_1 = Arc::new(memobuild::cache::HybridCache::new(None).unwrap());
 
     let env_fp = memobuild::env::EnvFingerprint::collect();
-    let mut graph_1 = build_graph_from_instructions(instructions.clone());
+    let mut graph_1 =
+        build_graph_from_instructions(instructions.clone(), std::env::current_dir().unwrap());
 
     core::detect_changes(&mut graph_1);
     core::propagate_dirty(&mut graph_1);
@@ -42,7 +43,7 @@ async fn test_reproducible_exports_are_identical() {
     std::env::set_var("MEMOBUILD_CACHE_DIR", cache_dir_2.path());
     let cache_2 = Arc::new(memobuild::cache::HybridCache::new(None).unwrap());
 
-    let mut graph_2 = build_graph_from_instructions(instructions);
+    let mut graph_2 = build_graph_from_instructions(instructions, std::env::current_dir().unwrap());
 
     core::detect_changes(&mut graph_2);
     core::propagate_dirty(&mut graph_2);

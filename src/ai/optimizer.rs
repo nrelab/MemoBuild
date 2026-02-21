@@ -1,7 +1,13 @@
-use crate::graph::{BuildGraph, NodeKind};
 use crate::env::EnvFingerprint;
+use crate::graph::{BuildGraph, NodeKind};
 
 pub struct BuildOptimizer;
+
+impl Default for BuildOptimizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl BuildOptimizer {
     pub fn new() -> Self {
@@ -14,9 +20,12 @@ impl BuildOptimizer {
         for node in &mut graph.nodes {
             // Heuristic: RUN nodes that appear to be independent or CPU-bound
             // should be prioritized and marked as parallelizable.
-            if let NodeKind::Run { .. } = &node.kind {
+            if let NodeKind::Run = &node.kind {
                 if node.content.contains("test") || node.content.contains("build") {
-                    println!("      ⚡ Optimizing node {}: '{}' - Setting high priority", node.id, node.name);
+                    println!(
+                        "      ⚡ Optimizing node {}: '{}' - Setting high priority",
+                        node.id, node.name
+                    );
                     node.metadata.priority = 10;
                     node.metadata.parallelizable = true;
                 }

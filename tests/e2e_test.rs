@@ -22,7 +22,7 @@ RUN npm run build
 "#;
 
     let instructions = docker::parser::parse_dockerfile(dockerfile_content);
-    let graph = docker::dag::build_graph_from_instructions(instructions);
+    let graph = docker::dag::build_graph_from_instructions(instructions, std::env::current_dir().unwrap_or_default());
 
     // Verify we have 5 nodes
     assert_eq!(graph.nodes.len(), 5, "Should have 5 nodes");
@@ -61,7 +61,7 @@ RUN npm install --only=production
 "#;
 
     let instructions = docker::parser::parse_dockerfile(dockerfile_content);
-    let graph = docker::dag::build_graph_from_instructions(instructions);
+    let graph = docker::dag::build_graph_from_instructions(instructions, std::env::current_dir().unwrap_or_default());
 
     // Get execution levels
     let levels = graph.levels();
@@ -129,7 +129,7 @@ RUN npm install
 "#;
 
     let instructions = docker::parser::parse_dockerfile(dockerfile_content);
-    let graph = docker::dag::build_graph_from_instructions(instructions);
+    let graph = docker::dag::build_graph_from_instructions(instructions, std::env::current_dir().unwrap_or_default());
 
     // Compute node keys
     let dep_hashes: Vec<String> = vec![]; // No dependencies for FROM node
@@ -207,7 +207,10 @@ async fn test_end_to_end_build_with_remote_cache() {
     // 6. Run First Build (Populate Cache)
     let dockerfile_content = "FROM alpine\nRUN echo 'hello world' > hello.txt";
     let instructions = docker::parser::parse_dockerfile(dockerfile_content);
-    let mut graph = docker::dag::build_graph_from_instructions(instructions);
+    let mut graph = docker::dag::build_graph_from_instructions(
+        instructions,
+        std::env::current_dir().unwrap_or_default(),
+    );
 
     core::detect_changes(&mut graph);
     core::propagate_dirty(&mut graph);
@@ -222,7 +225,10 @@ async fn test_end_to_end_build_with_remote_cache() {
     fs::create_dir_all(&client_path).unwrap();
 
     let instructions2 = docker::parser::parse_dockerfile(dockerfile_content);
-    let mut graph2 = docker::dag::build_graph_from_instructions(instructions2);
+    let mut graph2 = docker::dag::build_graph_from_instructions(
+        instructions2,
+        std::env::current_dir().unwrap_or_default(),
+    );
 
     core::detect_changes(&mut graph2);
     core::propagate_dirty(&mut graph2);

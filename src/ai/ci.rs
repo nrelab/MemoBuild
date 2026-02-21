@@ -2,6 +2,12 @@ use std::env;
 
 pub struct CiAdvisor;
 
+impl Default for CiAdvisor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CiAdvisor {
     pub fn new() -> Self {
         Self
@@ -18,7 +24,9 @@ impl CiAdvisor {
             if !std::path::Path::new(".github/workflows/memobuild.yml").exists() {
                 println!("         - 🚀 Actionable: Run 'memobuild generate-ci' to bootstrap your pipeline.");
             }
-            println!("         - Split build and test jobs to utilize multiple runners and reduce TTR.");
+            println!(
+                "         - Split build and test jobs to utilize multiple runners and reduce TTR."
+            );
         } else if gitlab_ci {
             println!("      💡 CI Suggestion (GitLab):");
             println!("         - Use 'artifacts:paths' to cache the .memobuild-cache directory.");
