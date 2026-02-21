@@ -6,8 +6,6 @@ use std::fs;
 #[cfg(feature = "server")]
 use std::sync::Arc;
 #[cfg(feature = "server")]
-use std::thread;
-#[cfg(feature = "server")]
 use std::time::Duration;
 #[cfg(feature = "server")]
 use tempfile::tempdir;

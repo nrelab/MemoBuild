@@ -1,4 +1,4 @@
-use memobuild::{cache, core, docker, executor, export};
+use memobuild::{cache, core, docker, executor, export, logging};
 
 #[cfg(feature = "server")]
 use memobuild::server;
@@ -10,6 +10,12 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Initialize structured logging
+    let json_logs = env::var("MEMOBUILD_JSON_LOGS")
+        .map(|v| v.to_lowercase() == "true")
+        .unwrap_or(false);
+    logging::init_logging(json_logs).ok();
+
     let args: Vec<String> = env::args().collect();
 
     // Support pulling an image: memobuild pull <registry>/<repo>:<tag>

@@ -477,20 +477,19 @@ async fn put_artifact(
     State(state): State<Arc<AppState>>,
     body: Bytes,
 ) -> impl IntoResponse {
-    // 1. CAS Verification: Verify hash of the body match requested hash
-    // (Note: In a true CAS, the hash *is* the content, so we verify it here)
-    // We assume the hash provided in URL is the expected BLAKE3 hash.
+    // 1. CAS Verification: Verify hash of the body matches requested hash
     let mut hasher = blake3::Hasher::new();
     hasher.update(&body);
     let actual_hash = hasher.finalize().to_hex().to_string();
 
     if actual_hash != hash {
-        eprintln!(
-            "CAS integrity failure: expected {}, got {}",
-            hash, actual_hash
-        );
-        // We might want to be strict here, but let's just log for now or return error
-        // return StatusCode::BAD_REQUEST;
+        let err = crate::error::MemoBuildError::CASIntegrityFailure {
+            expected: hash.clone(),
+            actual: actual_hash.clone(),
+            data_size: body.len(),
+        };
+        eprintln!("❌ {}", err);
+        return StatusCode::BAD_REQUEST;
     }
 
     let size = body.len() as u64;
@@ -590,17 +589,19 @@ async fn put_layer(
     State(state): State<Arc<AppState>>,
     body: Bytes,
 ) -> impl IntoResponse {
-    // CAS Verification
+    // CAS Verification: Strict enforcement for layer integrity
     let mut hasher = blake3::Hasher::new();
     hasher.update(&body);
     let actual_hash = hasher.finalize().to_hex().to_string();
 
     if actual_hash != hash {
-        eprintln!(
-            "CAS integrity failure in layer: expected {}, got {} (Expected if body is compressed or composite hash used)",
-            hash, actual_hash
-        );
-        // return StatusCode::BAD_REQUEST;
+        let err = crate::error::MemoBuildError::CASIntegrityFailure {
+            expected: hash.clone(),
+            actual: actual_hash.clone(),
+            data_size: body.len(),
+        };
+        eprintln!("❌ {}", err);
+        return StatusCode::BAD_REQUEST;
     }
 
     let size = body.len() as u64;

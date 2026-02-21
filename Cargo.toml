@@ -16,6 +16,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rayon = "1"
 anyhow = "1"
+thiserror = "1"
 walkdir = "2"
 glob = "0.3"
 sha2 = "0.10"
@@ -29,13 +30,18 @@ tower-http = { version = "0.4", features = ["fs", "trace"], optional = true }
 rusqlite = { version = "0.29", features = ["bundled"], optional = true }
 tar = "0.4"
 flate2 = "1.0"
-chrono = "0.4"
 async-trait = "0.1"
 oci-spec = "0.6"
 containerd-client = { version = "0.4", optional = true }
 tonic = { version = "0.10", optional = true }
 prost = { version = "0.12", optional = true }
 prost-types = { version = "0.12", optional = true }
+parking_lot = "0.12"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt", "ansi"] }
+clap = { version = "4.4", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+prometheus = { version = "0.13", optional = true }
 
 [features]
 default = []
