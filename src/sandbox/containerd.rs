@@ -1,4 +1,3 @@
-use containerd_client::tonic::Request;
 use crate::graph::Node;
 use crate::sandbox::{ExecResult, ResourceLimits, Sandbox, SandboxEnv};
 use anyhow::{Context, Result};
@@ -7,6 +6,7 @@ use containerd_client::services::v1::containers_client::ContainersClient;
 use containerd_client::services::v1::tasks_client::TasksClient;
 use containerd_client::services::v1::CreateContainerRequest;
 use containerd_client::tonic;
+use containerd_client::tonic::Request;
 use containerd_client::with_namespace;
 
 pub struct ContainerdSandbox {

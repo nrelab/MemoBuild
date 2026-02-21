@@ -76,7 +76,11 @@ RUN npm run build
         println!("  ❌ Same node should produce same key");
     }
 
-    let copy_key = graph.nodes[copy_package_idx].compute_node_key(std::slice::from_ref(&from_key1), None, None);
+    let copy_key = graph.nodes[copy_package_idx].compute_node_key(
+        std::slice::from_ref(&from_key1),
+        None,
+        None,
+    );
     if from_key1 != copy_key {
         println!("  ✅ Different nodes produce different keys");
         println!("    FROM: {}...", &from_key1[..16]);

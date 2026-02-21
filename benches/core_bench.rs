@@ -18,7 +18,10 @@ fn bench_hashing(c: &mut Criterion) {
 
     c.bench_function("directory hasher", |b| {
         b.iter(|| {
-            let _ = memobuild::hasher::file_hasher::hash_dir(path, &memobuild::hasher::IgnoreRules::empty());
+            let _ = memobuild::hasher::file_hasher::hash_dir(
+                path,
+                &memobuild::hasher::IgnoreRules::empty(),
+            );
         })
     });
 }
