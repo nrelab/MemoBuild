@@ -99,7 +99,6 @@ mod executor_tests {
         // All nodes should have computed hashes
         for node in &graph.nodes {
             assert!(!node.hash.is_empty());
-            assert!(node.hash.len() > 0);
         }
     }
 

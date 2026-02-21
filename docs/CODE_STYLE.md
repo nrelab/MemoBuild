@@ -1,39 +1,49 @@
-# MemoBuild Code Style & Quality Guidelines
+# MemoBuild Code Style & Guidelines
 
-To ensure a highly maintainable, safe, and collaborative environment, MemoBuild strictly adheres to the standard Rust idioms along with the following supplemental guidelines.
+This document outlines the coding standards, code style enforcement, and clippy overrides for the MemoBuild project. Adhering to these guidelines ensures consistency, maintainability, and safety across the codebase.
 
-## 1. Error Handling (`?` vs `.unwrap()`)
+## 1. Error Handling
 
-- **Default to `?`:** All fallible functions should return a `Result<T, E>` and bubble errors using the `?` operator. This ensures the caller can decide how to handle the failure contextually.
-- **Never `.unwrap()` in Production paths:** Hard unwraps should be reserved for logical impossibilities or test scaffolding. Use `expect("Detailed explanation of why this panic is unreachable")` if you must forcibly unwrap something.
+We follow a consistent and robust error handling strategy using `thiserror` and `anyhow`.
 
-## 2. Naming Conventions
+- **Libraries (Modules):** Use specific error types powered by `thiserror`. All internal library modules must return `Result<T, MemoBuildError>`. See `src/error.rs` for definitions.
+- **Applications (Executables):** Use `anyhow::Result` in top-level app logic (e.g., `main.rs`, CLI entrypoints) for seamless error propagation and context enrichment.
+- **`unwrap()` / `expect()`:** These are heavily discouraged in production code. Use them only when:
+  - You can unconditionally guarantee the operation won't fail (e.g., regex compilation on a static string).
+  - You are writing tests (where panicking on failure is expected).
+  - All legitimate uses of `expect()` MUST include a descriptive message explaining *why* the panic is unreachable.
 
-Follow standard Rust naming conventions (`camelCase` for types, `snake_case` for variables/functions).
-- **Channels**: Use standard TX/RX prefixes: `tx_events` and `rx_events`. Do not use `event_tx`.
-- **Hashes**: Always name strings holding BLAKE3 digests `hash` or `digest` (e.g., `input_manifest_hash`).
+## 2. Unconditional Module Structure
 
-## 3. Magic Numbers & Constants
+To ensure maximum test coverage out of the box, we structure modules unconditionally.
 
-**Do not use magic numbers.** Any arbitrary buffer sizes, defaults, or timeout scalars must be pulled into a module-level constant with documentation explaining *why* the number was chosen.
+- **Bad:** `#[cfg(feature = "server")] pub mod server;`
+  This prevents `server` module tests from being compiled or analyzed unless the feature flag is passed.
+- **Good:** Compile the module itself unconditionally, but feature-gate the *dependencies* inside the module or provide mock implementations. This ensures tests within the module boundaries are always available to the compiler.
 
+## 3. Magic Numbers
+
+Magic numbers (hardcoded constants within inline logic) are banned.
+
+- All numeric constants should be extracted to `const` declarations at the top of the file or in a shared `constants` module.
+- Add comments explaining where the number comes from (e.g., `/// 5 seconds default timeout for remote cache` ).
+
+## 4. Clippy Allowlist & Justification
+
+We run `cargo clippy` with a strict configuration. However, certain lints are allowed globally based on the project's specific constraints. The following lints are permitted:
+
+- `clippy::too_many_arguments`: Allowed for core executor functions (like `execute_node_logic`) where passing multiple dependencies is preferred over creating intermediate context structs, avoiding unnecessary allocations or complex lifetimes.
+- `clippy::module_inception`: Allowed when a module has the same name as its parent directory if the structure demands it (e.g., `server/server.rs`).
+
+*To add exceptions locally, justify them with a comment:*
 ```rust
-// BAD
-tokio::time::sleep(Duration::from_millis(5000)).await;
-
-// GOOD
-/// The default timeout for remote cache retrieval before switching contexts.
-pub const DEFAULT_CACHE_TIMEOUT_MS: u64 = 5000;
-tokio::time::sleep(Duration::from_millis(DEFAULT_CACHE_TIMEOUT_MS)).await;
+// ALLOW: We need a large buffer for OCI layer processing to improve I/O throughput.
+#[allow(clippy::large_stack_arrays)]
 ```
 
-## 4. Clippy Allowlist
+## 5. Formatting
 
-Run `cargo clippy --all-targets --all-features`. We target zero warnings on default clippy rules.
-Allowed exceptions include specific scenarios documented locally in modules via `#[allow(clippy::too_many_arguments)]` when strictly bounding builder patterns is less legible than executing raw parameter maps, but this should be rare.
+Formatting is strictly enforced via `rustfmt`.
 
-## 5. Module Structure & Feature Gating
-
-Code layout operations should not be gated by testing frameworks. Feature gates (`#[cfg(feature = "server")]`) should only be applied securely around application components that contain heavy dependency trees (like `axum` or `tonic`) to keep CLI execution binaries small. 
-
-If a module needs to be tested under a different feature flag, ensure its test payloads sit inside `#[cfg(test)]`.
+- Run `cargo fmt` before every commit.
+- CI will fail on unformatted code (`cargo fmt --all -- --check`).

@@ -112,7 +112,8 @@ impl IncrementalExecutor {
 
             // Execute parallel nodes first
             if !parallel_nodes.is_empty() {
-                self.execute_parallel_nodes(graph, &parallel_nodes, &pb).await?;
+                self.execute_parallel_nodes(graph, &parallel_nodes, &pb)
+                    .await?;
             }
 
             // Execute sequential nodes
@@ -162,6 +163,7 @@ impl IncrementalExecutor {
             let sandbox = self.sandbox.clone();
             let remote_executor = self.remote_executor.clone();
             let reproducible = self.reproducible;
+            let dry_run = self.dry_run;
 
             futures.push(async move {
                 if let Some(ref obs) = observer {
@@ -179,7 +181,7 @@ impl IncrementalExecutor {
                     dirty,
                     &kind,
                     reproducible,
-                    self.dry_run,
+                    dry_run,
                     sandbox,
                     remote_executor,
                     &node,
@@ -238,7 +240,10 @@ impl IncrementalExecutor {
         node_ids: &[&usize],
         pb: &ProgressBar,
     ) -> Result<()> {
-        pb.set_message(format!("🔧 Executing {} nodes sequentially", node_ids.len()));
+        pb.set_message(format!(
+            "🔧 Executing {} nodes sequentially",
+            node_ids.len()
+        ));
 
         for &&node_id in node_ids {
             let start_time = Instant::now();
@@ -330,7 +335,10 @@ impl IncrementalExecutor {
         }
 
         if dry_run {
-            println!("{}", format!("Dry-run mode, skipping execution for {}", name).yellow());
+            println!(
+                "{}",
+                format!("Dry-run mode, skipping execution for {}", name).yellow()
+            );
             return Ok((dirty, false));
         }
 
@@ -373,7 +381,9 @@ impl IncrementalExecutor {
                             .unwrap_or_else(|| hash.to_string()),
                         size_bytes: 0, // Placeholder
                     },
-                    timeout: std::time::Duration::from_secs(600),
+                    timeout: std::time::Duration::from_secs(
+                        crate::constants::DEFAULT_REMOTE_EXECUTION_TIMEOUT_SECS,
+                    ),
                     platform_properties: std::collections::HashMap::new(),
                     output_files: Vec::new(),
                     output_directories: Vec::new(),
@@ -438,16 +448,29 @@ impl IncrementalExecutor {
     fn print_execution_summary(&self) {
         println!("\n{}", "📊 Execution Summary:".bold().cyan());
         println!("  Total nodes: {}", self.execution_stats.total_nodes);
-        println!("  Executed nodes: {}", self.execution_stats.executed_nodes.to_string().yellow());
-        println!("  Cache hits: {}", self.execution_stats.cache_hits.to_string().green());
-        println!("  Cache misses: {}", self.execution_stats.cache_misses.to_string().red());
+        println!(
+            "  Executed nodes: {}",
+            self.execution_stats.executed_nodes.to_string().yellow()
+        );
+        println!(
+            "  Cache hits: {}",
+            self.execution_stats.cache_hits.to_string().green()
+        );
+        println!(
+            "  Cache misses: {}",
+            self.execution_stats.cache_misses.to_string().red()
+        );
         println!(
             "  Parallel levels: {}",
             self.execution_stats.parallel_levels
         );
         println!(
             "  Total time: {}",
-            indicatif::HumanDuration(std::time::Duration::from_millis(self.execution_stats.total_execution_time_ms)).to_string().purple()
+            indicatif::HumanDuration(std::time::Duration::from_millis(
+                self.execution_stats.total_execution_time_ms
+            ))
+            .to_string()
+            .purple()
         );
 
         if self.execution_stats.total_nodes > 0 {

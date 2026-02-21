@@ -57,7 +57,7 @@ pub async fn start_server(port: u16, data_dir: PathBuf, webhook_url: Option<Stri
     let metadata = MetadataStore::new(&db_path)?;
     let storage = Arc::new(LocalStorage::new(&data_dir)?);
 
-    let (tx_events, _) = broadcast::channel(100);
+    let (tx_events, _) = broadcast::channel(crate::constants::MAX_WS_BROADCAST_CAPACITY);
     let current_dag = Arc::new(std::sync::Mutex::new(None));
 
     let state = Arc::new(AppState {
@@ -159,7 +159,10 @@ async fn get_dag(State(state): State<Arc<AppState>>) -> impl IntoResponse {
 }
 
 async fn get_analytics_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    match state.metadata.get_analytics(50) {
+    match state
+        .metadata
+        .get_analytics(crate::constants::ANALYTICS_DB_LIMIT as u32)
+    {
         Ok(data) => (StatusCode::OK, Json(data)).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }

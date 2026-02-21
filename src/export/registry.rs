@@ -197,7 +197,7 @@ impl RegistryClient {
         // Re-construct the URL if it's relative
         let final_url = if location.starts_with('/') {
             // Extract host from base_url
-            let host = self.base_url.split("/v2").next().unwrap();
+            let host = self.base_url.split("/v2").next().unwrap_or(&self.base_url);
             format!("{}{}&digest={}", host, location, digest)
         } else {
             format!("{}&digest={}", location, digest)

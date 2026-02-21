@@ -1,6 +1,5 @@
 use memobuild::{cache, core, docker, executor, export, logging};
 
-#[cfg(feature = "server")]
 use memobuild::server;
 
 use anyhow::Result;
@@ -99,27 +98,20 @@ spec:
 
     // Support starting the server: memobuild --server --port 8080
     if args.iter().any(|arg| arg == "--server") {
-        #[cfg(feature = "server")]
-        {
-            let port = args
-                .iter()
-                .position(|arg| arg == "--port")
-                .and_then(|i| args.get(i + 1))
-                .and_then(|p| p.parse().ok())
-                .unwrap_or(8080);
+        let port = args
+            .iter()
+            .position(|arg| arg == "--port")
+            .and_then(|i| args.get(i + 1))
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(8080);
 
-            let webhook_url = env::var("MEMOBUILD_WEBHOOK").ok();
+        let webhook_url = env::var("MEMOBUILD_WEBHOOK").ok();
 
-            let data_dir = env::current_dir()?.join(".memobuild-server");
-            fs::create_dir_all(&data_dir)?;
+        let data_dir = env::current_dir()?.join(".memobuild-server");
+        fs::create_dir_all(&data_dir)?;
 
-            server::start_server(port, data_dir, webhook_url).await?;
-            return Ok(());
-        }
-        #[cfg(not(feature = "server"))]
-        {
-            anyhow::bail!("Server feature not enabled. Rebuild with --features server");
-        }
+        server::start_server(port, data_dir, webhook_url).await?;
+        return Ok(());
     }
 
     // Support starting the execution scheduler: memobuild --scheduler --port 9000
@@ -186,12 +178,10 @@ spec:
                 if args.iter().any(|arg| arg == "containerd") {
                     #[cfg(feature = "containerd")]
                     {
-                        Arc::new(
-                            memobuild::sandbox::containerd::ContainerdSandbox::new(
-                                "unix:///run/containerd/containerd.sock",
-                            )
-                            .await?,
-                        )
+                        Arc::new(memobuild::sandbox::containerd::ContainerdSandbox::new(
+                            "default",
+                            "/run/containerd/containerd.sock",
+                        ))
                     }
                     #[cfg(not(feature = "containerd"))]
                     {
@@ -462,7 +452,7 @@ spec:
         .await;
 
     println!("📦 Exporting OCI Image...");
-    let output_dir = export::export_image(&graph, "memobuild-demo:latest")?;
+    let output_dir = export::export_image(&graph, "memobuild-demo:latest", reproducible)?;
 
     // 4. Push to Registry (Optional)
     if args.iter().any(|arg| arg == "--push") {

@@ -140,7 +140,7 @@ RUN npm install
     assert_eq!(from_key1, from_key2, "Same node should produce same key");
 
     // Different nodes should produce different keys
-    let copy_key = graph.nodes[1].compute_node_key(&[from_key1.clone()], None, None);
+    let copy_key = graph.nodes[1].compute_node_key(std::slice::from_ref(&from_key1), None, None);
     assert_ne!(
         from_key1, copy_key,
         "Different nodes should produce different keys"

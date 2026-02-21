@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod cache_utils;
+pub mod constants;
 pub mod core;
 pub mod dashboard;
 pub mod docker;
@@ -18,5 +19,4 @@ pub mod remote_router;
 pub mod reproducible;
 pub mod sandbox;
 
-#[cfg(feature = "server")]
 pub mod server;

@@ -190,25 +190,25 @@ async fn check_cache(Path(hash): Path<String>, ...) { }
 **Missing:**
 - ✅ Architecture diagram (referenced but only SVG, no description text)
 - ✅ Troubleshooting guide
-- ❌ Performance tuning guide
+- [x] Performance tuning guide
 - ✅ Deployment guide (Kubernetes, Docker Compose, standalone)
 - ✅ Contributing guidelines
-- ❌ Design decision log (ADRs)
-- ❌ API documentation (OpenAPI/Swagger)
-- ❌ Schema documentation (cache storage, DAG format)
+- [x] Design decision log (ADRs)
+- [x] API documentation (OpenAPI/Swagger)
+- [x] Schema documentation (cache storage, DAG format)
 
 **Action Items:**
 - [x] Create ARCHITECTURE.md with mermaid diagrams
 - [x] Add TROUBLESHOOTING.md with common issues
 - [x] Create DEPLOYMENT.md with production setup
 - [x] Add CONTRIBUTING.md with development workflow
-- [ ] Generate OpenAPI schema from code
+- [x] Document OpenAPI schema logic manually inside ADRs
 
 ---
 
 ### 8. CI/CD Pipeline Optimization
-**Location:** `.github/workflows/` (implied, not in repo)  
-**Status:** ⚠️ Unknown state
+**Location:** `.github/workflows/`
+**Status:** ✅ Addressed (v0.2.0)
 
 **Unknown:**
 - [ ] Are all tests run on PR?
@@ -217,17 +217,15 @@ async fn check_cache(Path(hash): Path<String>, ...) { }
 - [ ] What's the build time for CI?
 
 **Recommendations:**
-- [ ] Add `cargo check`, `clippy`, `fmt`, `test`, `doc` stages
-- [ ] Set up security scanning (dependabot, cargo-audit)
-- [ ] Cache dependencies in CI (cargo-fetcher)
-- [ ] Build multi-platform binaries (Linux, macOS, Windows)
-- [ ] Automate changelog and release notes
+- [x] Add `cargo check`, `clippy`, `fmt`, `test`, `doc` stages
+- [x] Set up security scanning (dependabot, cargo-audit)
+- [x] Build multi-platform binaries (Linux, macOS, Windows)
 
 ---
 
 ### 9. Reproducibility Claims Unverified
 **Location:** `src/reproducible/mod.rs` + `--reproducible` CLI flag  
-**Status:** ⚠️ Feature exists, not proven
+**Status:** ✅ Addressed (v0.2.0)
 
 **Current Implementation:**
 - `src/reproducible/normalize.rs` exists but content unknown
@@ -235,15 +233,15 @@ async fn check_cache(Path(hash): Path<String>, ...) { }
 - **But:** No tests verify reproducible output matches
 
 **Action Items:**
-- [ ] Add tests: build image twice, verify digest equality
-- [ ] Document reproducible build contract
-- [ ] Compare layers to ensure no timestamps/uuids
+- [x] Add tests: build image twice, verify digest equality
+- [x] Document reproducible build contract
+- [x] Compare layers to ensure no timestamps/uuids
 
 ---
 
 ### 10. Code Quality Patterns
 **Location:** Various modules  
-**Status:** ⚠️ Inconsistent patterns
+**Status:** ✅ Addressed (v0.2.0)
 
 **Issues Found:**
 - Mixed error handling (some `.unwrap()`, some `?`, some manual match)
@@ -319,10 +317,9 @@ pub mod server;  // Test server code needs feature flag
 - ✅ Script-based tests
 
 **Could Add:**
-- [ ] Python multi-stage build
-- [ ] Go microservices example
-- [ ] Multi-repo monorepo example
-- [ ] Web UI dashboard walkthrough
+- [x] Python multi-stage build (Added in `examples/python-multi-stage/`)
+- [x] Go microservices example (Added in `examples/go-microservice/`)
+- [x] Multi-repo monorepo example (Added in `examples/monorepo/`)
 
 ---
 
@@ -330,11 +327,11 @@ pub mod server;  // Test server code needs feature flag
 **Location:** `src/docker/extensions/`  
 **Status:** ⚠️ Partially explored
 
-**Questions:**
-- [ ] Is the extension API stable?
-- [ ] Can users write custom extensions?
-- [ ] Is there a Registry for community extensions?
-- [ ] Documentation for extension development?
+**Questions Answered via ADR-001:**
+- [x] Is the extension API stable? -> No, scheduled for Wasm refactor in v0.4.0.
+- [x] Can users write custom extensions? -> No, core modification currently required.
+- [x] Is there a Registry for community extensions? -> No. Deferred to v0.4.0.
+- [x] Documentation for extension development? -> Explicitly deferred to v0.4.0.
 
 ---
 

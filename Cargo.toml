@@ -1,6 +1,6 @@
 [package]
 name = "memobuild"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2021"
 description = "A high-performance incremental build system with smart caching and OCI image support"
 license = "MIT"
@@ -25,17 +25,17 @@ tokio = { version = "1", features = ["full"] }
 rand = "0.8"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 futures = "0.3"
-axum = { version = "0.6.20", features = ["http1", "http2", "json", "ws"], optional = true }
-tower-http = { version = "0.4", features = ["fs", "trace"], optional = true }
-rusqlite = { version = "0.29", features = ["bundled"], optional = true }
+axum = { version = "0.6.20", features = ["http1", "http2", "json", "ws"] }
+tower-http = { version = "0.4", features = ["fs", "trace"] }
+rusqlite = { version = "0.29", features = ["bundled"] }
 tar = "0.4"
 flate2 = "1.0"
 async-trait = "0.1"
 oci-spec = "0.6"
 containerd-client = { version = "0.4", optional = true }
 tonic = { version = "0.10", optional = true }
-prost = { version = "0.12", optional = true }
-prost-types = { version = "0.12", optional = true }
+prost = { version = "0.11", optional = true }
+prost-types = { version = "0.11", optional = true }
 parking_lot = "0.12"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt", "ansi"] }
@@ -48,9 +48,9 @@ clap_complete = "4.5.66"
 
 [features]
 default = []
-server = ["axum", "tower-http", "rusqlite"]
+server = []
 containerd = ["containerd-client", "tonic", "prost", "prost-types"]
-remote-exec = ["tonic", "prost", "prost-types", "axum", "tower-http"]
+remote-exec = ["tonic", "prost", "prost-types"]
 
 [dev-dependencies]
 criterion = "0.8.2"
