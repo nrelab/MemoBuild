@@ -45,7 +45,7 @@ mod cache_tests {
 /// Tests for hasher module
 #[cfg(test)]
 mod hasher_tests {
-    use memobuild::hasher::{IgnoreRules, hash_path};
+    use memobuild::hasher::{hash_path, IgnoreRules};
     use std::path::Path;
     use tempfile::tempdir;
 
@@ -237,10 +237,7 @@ mod change_detection_tests {
         // Validate dependency references are valid
         for node in &nodes {
             for &dep in &node.deps {
-                assert!(
-                    dep < node.id,
-                    "Dependency should reference earlier node"
-                );
+                assert!(dep < node.id, "Dependency should reference earlier node");
                 assert!(
                     dep < nodes.len(),
                     "Dependency should reference existing node"
@@ -259,7 +256,10 @@ mod env_fingerprint_tests {
     fn test_fingerprint_creation() {
         // Fingerprint should be created successfully
         let fp = EnvFingerprint::collect();
-        assert!(!fp.env_vars.is_empty() || !fp.toolchain.is_empty(), "Fingerprint should contain some data");
+        assert!(
+            !fp.env_vars.is_empty() || !fp.toolchain.is_empty(),
+            "Fingerprint should contain some data"
+        );
     }
 
     #[test]

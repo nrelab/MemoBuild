@@ -31,11 +31,27 @@ pub enum MemoBuildError {
 impl std::fmt::Display for MemoBuildError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::CASIntegrityFailure { expected, actual, data_size } => {
-                write!(f, "CAS integrity failure: expected {}, got {} (size: {} bytes)", expected, actual, data_size)
+            Self::CASIntegrityFailure {
+                expected,
+                actual,
+                data_size,
+            } => {
+                write!(
+                    f,
+                    "CAS integrity failure: expected {}, got {} (size: {} bytes)",
+                    expected, actual, data_size
+                )
             }
-            Self::NetworkError { message, retryable, attempt } => {
-                write!(f, "Network error (attempt {}, retryable: {}): {}", attempt, retryable, message)
+            Self::NetworkError {
+                message,
+                retryable,
+                attempt,
+            } => {
+                write!(
+                    f,
+                    "Network error (attempt {}, retryable: {}): {}",
+                    attempt, retryable, message
+                )
             }
             Self::StorageError { operation, reason } => {
                 write!(f, "Storage error in {}: {}", operation, reason)
@@ -111,7 +127,9 @@ pub fn calculate_backoff(attempt: u32, config: &RetryConfig) -> u64 {
 
     // Add jitter: ±20% of backoff, then clamp to max
     let jitter = (backoff as f64) * (rand::random::<f64>() * 0.4 - 0.2);
-    ((backoff as f64) + jitter).max(0.0).min(config.max_backoff_ms as f64) as u64
+    ((backoff as f64) + jitter)
+        .max(0.0)
+        .min(config.max_backoff_ms as f64) as u64
 }
 
 #[cfg(test)]
