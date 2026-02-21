@@ -41,10 +41,17 @@ pub struct HttpRemoteCache {
 
 impl HttpRemoteCache {
     pub fn new(base_url: String) -> Self {
-        Self {
-            base_url,
-            client: Client::new(),
-        }
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            "X-MemoBuild-API-Version",
+            reqwest::header::HeaderValue::from_static("1.0"),
+        );
+        let client = Client::builder()
+            .default_headers(headers)
+            .build()
+            .unwrap_or_else(|_| Client::new());
+
+        Self { base_url, client }
     }
 }
 

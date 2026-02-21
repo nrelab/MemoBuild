@@ -42,6 +42,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt",
 clap = { version = "4.4", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 prometheus = { version = "0.13", optional = true }
+colored = "3.1.1"
+indicatif = "0.18.4"
+clap_complete = "4.5.66"
 
 [features]
 default = []
@@ -50,4 +53,9 @@ containerd = ["containerd-client", "tonic", "prost", "prost-types"]
 remote-exec = ["tonic", "prost", "prost-types", "axum", "tower-http"]
 
 [dev-dependencies]
+criterion = "0.8.2"
 tempfile = "3"
+
+[[bench]]
+name = "core_bench"
+harness = false

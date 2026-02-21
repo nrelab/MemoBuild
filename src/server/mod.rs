@@ -7,8 +7,9 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path, Query, State,
     },
-    http::StatusCode,
-    response::{Html, IntoResponse},
+    http::{Request, StatusCode},
+    middleware::{self, Next},
+    response::{Html, IntoResponse, Response},
     routing::{get, head, post, put},
     Json, Router,
 };
@@ -40,6 +41,15 @@ pub struct AnalyticsData {
     pub dirty: u32,
     pub cached: u32,
     pub duration_ms: u64,
+}
+
+async fn add_api_version_header<B>(req: Request<B>, next: Next<B>) -> Response {
+    let mut response = next.run(req).await;
+    response.headers_mut().insert(
+        "X-MemoBuild-API-Version",
+        axum::http::HeaderValue::from_static("1.0"),
+    );
+    response
 }
 
 pub async fn start_server(port: u16, data_dir: PathBuf, webhook_url: Option<String>) -> Result<()> {
@@ -77,6 +87,7 @@ pub async fn start_server(port: u16, data_dir: PathBuf, webhook_url: Option<Stri
         .route("/api/analytics", get(get_analytics_handler))
         .route("/api/layers", get(get_layer_stats_handler))
         .route("/ws", get(ws_handler))
+        .layer(middleware::from_fn(add_api_version_header))
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));

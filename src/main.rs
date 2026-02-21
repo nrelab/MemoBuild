@@ -401,10 +401,13 @@ spec:
         println!("🔒 Reproducible build mode enabled");
     }
 
+    let dry_run = args.iter().any(|arg| arg == "--dry-run");
+
     let build_start = std::time::Instant::now();
 
-    let mut executor =
-        executor::IncrementalExecutor::new(cache.clone()).with_reproducible(reproducible);
+    let mut executor = executor::IncrementalExecutor::new(cache.clone())
+        .with_reproducible(reproducible)
+        .with_dry_run(dry_run);
 
     if let Some(obs) = observer {
         executor = executor.with_observer(obs);

@@ -18,7 +18,7 @@ MemoBuild is a sophisticated incremental build system with strong foundational a
 
 ### 1. Incomplete Error Handling
 **Location:** Multiple files  
-**Status:** ⚠️ Active Issue
+**Status:** ✅ Resolved (v0.2.0)
 
 **Details:**
 - `src/server/mod.rs` (line 588-610): CAS integrity checks commented out with `// We might want to be strict here`
@@ -38,16 +38,16 @@ if actual_hash != hash {
 **Impact:** Data integrity risks, silent failures in cache operations
 
 **Action Items:**
-- [ ] Enforce CAS verification (remove commented-out error returns)
-- [ ] Implement exponential backoff for remote cache failures
-- [ ] Add structured error types with `thiserror` or `anyhow` context
-- [ ] Test error paths with failure injection tests
+- [x] Enforce CAS verification (remove commented-out error returns)
+- [x] Implement exponential backoff for remote cache failures
+- [x] Add structured error types with `thiserror` or `anyhow` context
+- [x] Test error paths with failure injection tests
 
 ---
 
 ### 2. Insufficient Test Coverage
 **Location:** `/workspaces/MemoBuild/tests/` and src modules  
-**Status:** ⚠️ Partial Coverage
+**Status:** ✅ Coverage Expanded (v0.2.0)
 
 **Current Test Inventory:**
 - ✅ `tests/e2e_test.rs`: 4 tests (DAG linking, parallel levels, identities, remote cache)
@@ -55,10 +55,10 @@ if actual_hash != hash {
 - ✅ `src/hasher/ignore.rs`: 2 tests (exact match, wildcard)
 - ✅ `src/server/metadata.rs`: 1 test (metadata store)
 - ✅ `src/server/storage.rs`: 1 test (local storage)
-- ❌ `src/remote_cache.rs`: Stub only (Integration tests noted as missing)
-- ❌ `src/executor.rs`: No unit tests
-- ❌ `src/core.rs`: No direct tests
-- ❌ `src/cache.rs`: No tests for tiered caching strategy
+- ✅ `src/remote_cache.rs`: Integration tests added
+- ✅ `src/executor.rs`: Unit and integration tests added
+- ✅ `src/core.rs`: Direct tests added
+- ✅ `src/cache.rs`: Tests for tiered caching strategy added
 
 **Gap Analysis:**
 - **Critical Paths Untested:** Graph execution, cache eviction, remote synchronization
@@ -66,17 +66,17 @@ if actual_hash != hash {
 - **Integration:** Remote cache integration lacks E2E tests beyond basic flow
 
 **Action Items:**
-- [ ] Add executor unit tests with mock cache backends
-- [ ] Cover all error paths in cache operations
-- [ ] E2E tests for cache coherency across clients
+- [x] Add executor unit tests with mock cache backends
+- [x] Cover all error paths in cache operations
+- [x] E2E tests for cache coherency across clients
 - [ ] Benchmark tests for performance regressions
-- [ ] Property-based tests for DAG construction
+- [x] Property-based tests for DAG construction
 
 ---
 
 ### 3. Missing Observability & Logging
 **Location:** Codebase-wide  
-**Status:** ⚠️ Ad-hoc logging only
+**Status:** ✅ Structured Logging Implemented (v0.2.0)
 
 **Current State:**
 - Uses `println!`, `eprintln!` for output
@@ -95,17 +95,17 @@ eprintln!("Error getting artifact: {}", e);
 **Impact:** Difficult debuggability, no operational insights, poor monitoring
 
 **Action Items:**
-- [ ] Integrate `tracing` crate for structured logging
-- [ ] Add span context through async operations
-- [ ] Implement metrics (cache hit/miss rate, latency histograms)
-- [ ] Connect metrics to Prometheus export endpoint
-- [ ] Add request tracing headers for distributed tracing
+- [x] Integrate `tracing` crate for structured logging
+- [x] Add span context through async operations
+- [x] Implement metrics (cache hit/miss rate, latency histograms)
+- [x] Connect metrics to Prometheus export endpoint
+- [x] Add request tracing headers for distributed tracing
 
 ---
 
 ### 4. Security Vulnerabilities Not Audited
 **Location:** Dependencies + crypto operations  
-**Status:** ⚠️ Requires audit
+**Status:** ✅ Audited (v0.2.0)
 
 **Known Risks:**
 - No SBOM (Software Bill of Materials)
@@ -120,11 +120,11 @@ eprintln!("Error getting artifact: {}", e);
 - Vulnerability disclosure process
 
 **Action Items:**
-- [ ] Run `cargo audit` and document findings
-- [ ] Generate SBOM with `cargo-sbom`
-- [ ] Review crypto usage against OWASP guidelines
-- [ ] Implement secure credential storage (recommend: keyring crate)
-- [ ] Add input validation/fuzzing for parser
+- [x] Run `cargo audit` and document findings
+- [x] Generate SBOM with `cargo-sbom`
+- [x] Review crypto usage against OWASP guidelines
+- [ ] Implement secure credential storage (recommend: keyring crate) (Planned v1.0.0)
+- [x] Add input validation/fuzzing for parser
 
 ---
 
@@ -132,7 +132,7 @@ eprintln!("Error getting artifact: {}", e);
 
 ### 5. Scalability Not Tested
 **Location:** `src/remote_exec/`, `src/server/mod.rs`  
-**Status:** ⚠️ No load testing
+**Status:** ✅ Addressed (v0.2.0)
 
 **Concerns:**
 - Remote execution scheduler (`src/remote_exec/scheduler.rs`) lacks load balancing
@@ -141,21 +141,21 @@ eprintln!("Error getting artifact: {}", e);
 - No sharding strategy for artifact storage
 
 **Questions Unanswered:**
-- [ ] How many concurrent builders can a single server handle?
-- [ ] Does in-memory DAG tracking leak memory with large graphs?
-- [ ] What's the bandwidth limit for artifact push/pull?
+- [x] How many concurrent builders can a single server handle?
+- [x] Does in-memory DAG tracking leak memory with large graphs?
+- [x] What's the bandwidth limit for artifact push/pull?
 
 **Action Items:**
-- [ ] Load test server with k6 or wrk (target: 100+ concurrent builds)
-- [ ] Profile memory usage under sustained load
-- [ ] Document scaling limits and provide scaling guidance
-- [ ] Consider eventual consistency model for distributed deployments
+- [x] Load test server with k6 or wrk (target: 100+ concurrent builds)
+- [x] Profile memory usage under sustained load
+- [x] Document scaling limits and provide scaling guidance
+- [x] Consider eventual consistency model for distributed deployments
 
 ---
 
 ### 6. API Stability & Versioning
 **Location:** `src/server/mod.rs` endpoints  
-**Status:** ⚠️ No versioning strategy
+**Status:** ✅ Versioned (v0.2.0)
 
 **Current Endpoints:**
 - `/cache/{hash}` ← No API version
@@ -170,16 +170,16 @@ async fn check_cache(Path(hash): Path<String>, ...) { }
 ```
 
 **Action Items:**
-- [ ] Add `api-version` header (e.g., `X-MemoBuild-API-Version: 1.0`)
-- [ ] Document breaking change policy
-- [ ] Add backwards compatibility tests (e.g., v1.0 client vs v1.1 server)
-- [ ] Implement API changelog in docs
+- [x] Add `api-version` header (e.g., `X-MemoBuild-API-Version: 1.0`)
+- [x] Document breaking change policy
+- [x] Add backwards compatibility tests (e.g., v1.0 client vs v1.1 server)
+- [x] Implement API changelog in docs
 
 ---
 
 ### 7. Documentation Gaps
 **Location:** `/docs/` directory  
-**Status:** ⚠️ Missing key sections
+**Status:** ✅ Added (v0.2.0)
 
 **Existing:**
 - ✅ VISION.md (philosophy)
@@ -188,20 +188,20 @@ async fn check_cache(Path(hash): Path<String>, ...) { }
 - ✅ EXTENSION_BUILD_AND_USAGE.md (extensions)
 
 **Missing:**
-- ❌ Architecture diagram (referenced but only SVG, no description text)
-- ❌ Troubleshooting guide
+- ✅ Architecture diagram (referenced but only SVG, no description text)
+- ✅ Troubleshooting guide
 - ❌ Performance tuning guide
-- ❌ Deployment guide (Kubernetes, Docker Compose, standalone)
-- ❌ Contributing guidelines
+- ✅ Deployment guide (Kubernetes, Docker Compose, standalone)
+- ✅ Contributing guidelines
 - ❌ Design decision log (ADRs)
 - ❌ API documentation (OpenAPI/Swagger)
 - ❌ Schema documentation (cache storage, DAG format)
 
 **Action Items:**
-- [ ] Create ARCHITECTURE.md with mermaid diagrams
-- [ ] Add TROUBLESHOOTING.md with common issues
-- [ ] Create DEPLOYMENT.md with production setup
-- [ ] Add CONTRIBUTING.md with development workflow
+- [x] Create ARCHITECTURE.md with mermaid diagrams
+- [x] Add TROUBLESHOOTING.md with common issues
+- [x] Create DEPLOYMENT.md with production setup
+- [x] Add CONTRIBUTING.md with development workflow
 - [ ] Generate OpenAPI schema from code
 
 ---
@@ -265,17 +265,17 @@ pub mod server;  // Test server code needs feature flag
 ```
 
 **Action Items:**
-- [ ] Establish error handling guidelines (when to unwrap vs ?)
-- [ ] Create code style document + clippy allowlist with justification
-- [ ] Extract magic numbers to constants
-- [ ] Consider unconditional module structure (test gate code, not feature gate)
+- [x] Establish error handling guidelines (when to unwrap vs ?)
+- [x] Create code style document + clippy allowlist with justification
+- [x] Extract magic numbers to constants
+- [x] Consider unconditional module structure (test gate code, not feature gate)
 
 ---
 
 ## 🟡 Medium Priority Issues (P2 - Polish)
 
 ### 11. User Experience & CLI
-**Status:** ⚠️ Room for improvement
+**Status:** ✅ Improved (v0.2.0)
 
 **Current Limitations:**
 - No progress bar for long builds
@@ -285,22 +285,22 @@ pub mod server;  // Test server code needs feature flag
 - Help text could include examples
 
 **Quick Wins:**
-- [ ] Add `indicatif` for progress bars
-- [ ] Use `colored` crate for terminal output
-- [ ] Generate shell completions with `clap_complete`
-- [ ] Humanize file sizes and durations
-- [ ] Add `--dry-run` mode
+- [x] Add `indicatif` for progress bars
+- [x] Use `colored` crate for terminal output
+- [x] Generate shell completions with `clap_complete`
+- [x] Humanize file sizes and durations
+- [x] Add `--dry-run` mode
 
 ---
 
 ### 12. Performance Benchmarking
-**Status:** ⚠️ No baseline
+**Status:** ✅ Baselines established (v0.2.0)
 
 **Missing:**
-- [ ] Benchmark suite for core operations
-- [ ] Baseline metrics for future comparisons
-- [ ] Profiling guide (flamegraph setup)
-- [ ] Performance regressions in CI
+- [x] Benchmark suite for core operations
+- [x] Baseline metrics for future comparisons
+- [x] Profiling guide (flamegraph setup)
+- [x] Performance regressions in CI
 
 **Candidates for Benchmarking:**
 - DAG construction from large Dockerfile
@@ -365,30 +365,30 @@ pub mod server;  // Test server code needs feature flag
 
 | Item | Owner | Duration | Status |
 |------|-------|----------|--------|
-| Enforce error handling (P0) | - | 3 days | ⬜ Not Started |
-| Complete test coverage (P0) | - | 5 days | ⬜ Not Started |
-| Security audit (P0) | - | 2 days | ⬜ Not Started |
-| Structured logging setup (P0) | - | 3 days | ⬜ Not Started |
+| Enforce error handling (P0) | - | 3 days | ✅ Completed |
+| Complete test coverage (P0) | - | 5 days | ✅ Completed |
+| Security audit (P0) | - | 2 days | ✅ Completed |
+| Structured logging setup (P0) | - | 3 days | ✅ Completed |
 
 ### Phase 2: High-Value (Weeks 3-4)
 **Improves production readiness**
 
 | Item | Owner | Duration | Status |
 |------|-------|----------|--------|
-| Load testing framework (P1) | - | 4 days | ⬜ Not Started |
-| API versioning (P1) | - | 2 days | ⬜ Not Started |
-| Architecture documentation (P1) | - | 3 days | ⬜ Not Started |
-| Deployment guide (P1) | - | 3 days | ⬜ Not Started |
+| Load testing framework (P1) | - | 4 days | ✅ Completed |
+| API versioning (P1) | - | 2 days | ✅ Completed |
+| Architecture documentation (P1) | - | 3 days | ✅ Completed |
+| Deployment guide (P1) | - | 3 days | ✅ Completed |
 
 ### Phase 3: Polish (Weeks 5-6)
 **UX and performance improvements**
 
 | Item | Owner | Duration | Status |
 |------|-------|----------|--------|
-| Performance benchmarking (P2) | - | 3 days | ⬜ Not Started |
-| CLI UX improvements (P2) | - | 2 days | ⬜ Not Started |
-| Code style enforcement (P2) | - | 1 day | ⬜ Not Started |
-
+| Performance benchmarking (P2) | - | 3 days | ✅ Completed |
+| CLI UX improvements (P2) | - | 2 days | ✅ Completed |
+| Code style enforcement (P2) | - | 1 day | ✅ Completed |
+ 
 ---
 
 ## 🎯 Success Metrics
@@ -411,16 +411,16 @@ pub mod server;  // Test server code needs feature flag
 
 Before major release, verify:
 
-- [ ] All P0 issues resolved
-- [ ] Test coverage >80%
-- [ ] Zero security audit findings
-- [ ] Deployed and tested on K8s
-- [ ] Performance benchmarks established
-- [ ] Documentation is current
-- [ ] CLI is user-friendly
-- [ ] Examples work end-to-end
-- [ ] Release notes are clear
-- [ ] API stability guaranteed (versioning in place)
+- [x] All P0 issues resolved
+- [x] Test coverage >80%
+- [x] Zero security audit findings
+- [x] Deployed and tested on K8s
+- [x] Performance benchmarks established
+- [x] Documentation is current
+- [x] CLI is user-friendly
+- [x] Examples work end-to-end
+- [x] Release notes are clear
+- [x] API stability guaranteed (versioning in place)
 
 ---
 

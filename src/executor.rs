@@ -1,6 +1,8 @@
 use crate::cache::HybridCache;
 use crate::graph::BuildGraph;
 use anyhow::Result;
+use colored::*;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -10,6 +12,7 @@ pub struct IncrementalExecutor {
     execution_stats: ExecutionStats,
     observer: Option<Arc<dyn crate::dashboard::BuildObserver>>,
     reproducible: bool,
+    dry_run: bool,
     sandbox: Arc<dyn crate::sandbox::Sandbox>,
     remote_executor: Option<Arc<dyn crate::remote_exec::RemoteExecutor>>,
 }
@@ -31,9 +34,15 @@ impl IncrementalExecutor {
             execution_stats: ExecutionStats::default(),
             observer: None,
             reproducible: false,
+            dry_run: false,
             sandbox: Arc::new(crate::sandbox::local::LocalSandbox),
             remote_executor: None,
         }
+    }
+
+    pub fn with_dry_run(mut self, dry_run: bool) -> Self {
+        self.dry_run = dry_run;
+        self
     }
 
     pub fn with_remote_executor(
@@ -79,7 +88,15 @@ impl IncrementalExecutor {
 
         println!(
             "🚀 Starting incremental execution with {} levels",
-            levels.len()
+            levels.len().to_string().cyan()
+        );
+
+        let pb = ProgressBar::new(self.execution_stats.total_nodes as u64);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+                .unwrap()
+                .progress_chars("#>-"),
         );
 
         for (level_idx, level) in levels.iter().enumerate() {
@@ -95,16 +112,18 @@ impl IncrementalExecutor {
 
             // Execute parallel nodes first
             if !parallel_nodes.is_empty() {
-                self.execute_parallel_nodes(graph, &parallel_nodes).await?;
+                self.execute_parallel_nodes(graph, &parallel_nodes, &pb).await?;
             }
 
             // Execute sequential nodes
             if !sequential_nodes.is_empty() {
-                self.execute_sequential_nodes(graph, &sequential_nodes)
+                self.execute_sequential_nodes(graph, &sequential_nodes, &pb)
                     .await?;
             }
             // Finalize execute
         }
+
+        pb.finish_with_message("Execution completed".green().to_string());
 
         self.execution_stats.total_execution_time_ms = start_time.elapsed().as_millis() as u64;
 
@@ -126,8 +145,9 @@ impl IncrementalExecutor {
         &mut self,
         graph: &mut BuildGraph,
         node_ids: &[&usize],
+        pb: &ProgressBar,
     ) -> Result<()> {
-        println!("⚡ Executing {} nodes in parallel", node_ids.len());
+        pb.set_message(format!("⚡ Executing {} nodes in parallel", node_ids.len()));
 
         let mut futures = Vec::new();
 
@@ -159,6 +179,7 @@ impl IncrementalExecutor {
                     dirty,
                     &kind,
                     reproducible,
+                    self.dry_run,
                     sandbox,
                     remote_executor,
                     &node,
@@ -204,6 +225,7 @@ impl IncrementalExecutor {
                 self.execution_stats.cache_misses += 1;
                 self.execution_stats.executed_nodes += 1;
             }
+            pb.inc(1);
         }
 
         Ok(())
@@ -214,8 +236,9 @@ impl IncrementalExecutor {
         &mut self,
         graph: &mut BuildGraph,
         node_ids: &[&usize],
+        pb: &ProgressBar,
     ) -> Result<()> {
-        println!("🔧 Executing {} nodes sequentially", node_ids.len());
+        pb.set_message(format!("🔧 Executing {} nodes sequentially", node_ids.len()));
 
         for &&node_id in node_ids {
             let start_time = Instant::now();
@@ -236,6 +259,7 @@ impl IncrementalExecutor {
                 node.dirty,
                 &node.kind,
                 self.reproducible,
+                self.dry_run,
                 self.sandbox.clone(),
                 self.remote_executor.clone(),
                 node,
@@ -275,6 +299,7 @@ impl IncrementalExecutor {
                 self.execution_stats.cache_misses += 1;
                 self.execution_stats.executed_nodes += 1;
             }
+            pb.inc(1);
         }
 
         Ok(())
@@ -289,6 +314,7 @@ impl IncrementalExecutor {
         dirty: bool,
         _kind: &crate::graph::NodeKind,
         reproducible: bool,
+        dry_run: bool,
         sandbox: Arc<dyn crate::sandbox::Sandbox>,
         remote_executor: Option<Arc<dyn crate::remote_exec::RemoteExecutor>>,
         node: &crate::graph::Node,
@@ -296,18 +322,16 @@ impl IncrementalExecutor {
         // 1. Check cache first
         match cache.get_artifact(hash).await {
             Ok(Some(_data)) => {
-                println!("⚡ Cache HIT: {} [{}]", name, &hash[..8]);
+                // Return silently, progress bar handles message visually without spam
                 return Ok((false, true));
             }
-            Err(e) => eprintln!("⚠️ Cache error for {}: {}", name, e),
+            Err(e) => eprintln!("{}", format!("⚠️ Cache error for {}: {}", name, e).red()),
             _ => {}
         }
 
-        // 2. Build if dirty or not cached
-        if dirty {
-            println!("🔧 Rebuilding node: {}...", name);
-        } else {
-            println!("🔨 Building clean node (not in cache): {}...", name);
+        if dry_run {
+            println!("{}", format!("Dry-run mode, skipping execution for {}", name).yellow());
+            return Ok((dirty, false));
         }
 
         // Check if node type needs actual execution in build farm
@@ -412,18 +436,18 @@ impl IncrementalExecutor {
 
     /// Print execution summary
     fn print_execution_summary(&self) {
-        println!("\n📊 Execution Summary:");
+        println!("\n{}", "📊 Execution Summary:".bold().cyan());
         println!("  Total nodes: {}", self.execution_stats.total_nodes);
-        println!("  Executed nodes: {}", self.execution_stats.executed_nodes);
-        println!("  Cache hits: {}", self.execution_stats.cache_hits);
-        println!("  Cache misses: {}", self.execution_stats.cache_misses);
+        println!("  Executed nodes: {}", self.execution_stats.executed_nodes.to_string().yellow());
+        println!("  Cache hits: {}", self.execution_stats.cache_hits.to_string().green());
+        println!("  Cache misses: {}", self.execution_stats.cache_misses.to_string().red());
         println!(
             "  Parallel levels: {}",
             self.execution_stats.parallel_levels
         );
         println!(
-            "  Total time: {}ms",
-            self.execution_stats.total_execution_time_ms
+            "  Total time: {}",
+            indicatif::HumanDuration(std::time::Duration::from_millis(self.execution_stats.total_execution_time_ms)).to_string().purple()
         );
 
         if self.execution_stats.total_nodes > 0 {
