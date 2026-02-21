@@ -41,7 +41,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt", "ansi"] }
 clap = { version = "4.4", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
-prometheus = { version = "0.13", optional = true }
+
 colored = "3.1.1"
 indicatif = "0.18.4"
 clap_complete = "4.5.66"
