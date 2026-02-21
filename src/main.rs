@@ -335,8 +335,18 @@ spec:
         }
     }
 
-    println!("📊 Building DAG...");
-    let mut graph = docker::dag::build_graph_from_instructions(instructions);
+    // 2.3 Context and DAG Building
+    let context_dir = args.get(args.len() - 1)
+        .filter(|arg| !arg.starts_with('-'))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| env::current_dir().unwrap());
+    
+    println!("📊 Building DAG for context: {}...", context_dir.display());
+    let mut graph = docker::dag::build_graph_from_instructions(instructions, context_dir.clone());
+
+    // 2.3 AI Layer Analysis (Automatic Dependency Detection & Optimization)
+    let ai_layer = memobuild::ai::AiLayer::new();
+    ai_layer.analyze(&mut graph, &env_fp, &context_dir);
 
     println!("🔍 Detecting changes (filesystem hashing)...");
     core::detect_changes(&mut graph);
@@ -398,6 +408,11 @@ spec:
     let mut executor = executor::IncrementalExecutor::new(cache.clone())
         .with_reproducible(reproducible)
         .with_dry_run(dry_run);
+
+    // Set sandbox to use context_dir
+    executor = executor.with_sandbox(Arc::new(memobuild::sandbox::local::LocalSandbox::new(
+        context_dir.clone(),
+    )));
 
     if let Some(obs) = observer {
         executor = executor.with_observer(obs);

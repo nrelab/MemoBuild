@@ -68,15 +68,28 @@ pub fn detect_changes(graph: &mut BuildGraph) {
             hash_str(&node.content)
         };
 
-        if node.hash != new_hash {
+        // Incorporate AI-detected extra source paths into the hash
+        let mut final_hash = new_hash;
+        if !node.metadata.extra_source_paths.is_empty() {
+            let mut hasher = Hasher::new();
+            hasher.update(final_hash.as_bytes());
+            for extra_path in &node.metadata.extra_source_paths {
+                if let Ok(h) = hasher::hash_path(extra_path, &ignore) {
+                    hasher.update(h.as_bytes());
+                }
+            }
+            final_hash = hasher.finalize().to_hex().to_string();
+        }
+
+        if node.hash != final_hash {
             println!(
                 "   - {}: {} -> {}",
                 node.name,
                 &node.hash[..std::cmp::min(8, node.hash.len())],
-                &new_hash[..8]
+                &final_hash[..8]
             );
             node.dirty = true;
-            node.hash = new_hash;
+            node.hash = final_hash;
         }
     }
 }

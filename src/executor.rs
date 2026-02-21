@@ -35,7 +35,9 @@ impl IncrementalExecutor {
             observer: None,
             reproducible: false,
             dry_run: false,
-            sandbox: Arc::new(crate::sandbox::local::LocalSandbox),
+            sandbox: Arc::new(crate::sandbox::local::LocalSandbox::new(
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+            )),
             remote_executor: None,
         }
     }
