@@ -118,7 +118,6 @@ impl LoadTestState {
             latencies: Arc::new(parking_lot::Mutex::new(Vec::new())),
         }
     }
-
 }
 
 impl Default for LoadTestState {
