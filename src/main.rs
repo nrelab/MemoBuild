@@ -495,9 +495,7 @@ async fn start_worker(
 
         // Initialize sandbox
         let sandbox: Arc<dyn sandbox::Sandbox> = match _sandbox_type.as_str() {
-            "local" => Arc::new(sandbox::local::LocalSandbox::new(
-                std::env::current_dir()?,
-            )),
+            "local" => Arc::new(sandbox::local::LocalSandbox::new(std::env::current_dir()?)),
             #[cfg(feature = "containerd")]
             "containerd" => Arc::new(sandbox::containerd::ContainerdSandbox::new().await?),
             _ => anyhow::bail!("Unsupported sandbox type: {}", _sandbox_type),
