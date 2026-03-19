@@ -10,7 +10,7 @@
 
 MemoBuild is a next-generation build system that intelligently rebuilds only what's changed, using advanced dependency tracking, multi-layer caching, and OCI-compatible image generation. Now featuring **enterprise-grade high availability, automatic scaling, and distributed caching**.
 
-**[🚀 Read the Vision](./docs/VISION.md)** | **[📄 Technical Whitepaper](./docs/WHITEPAPER.md)** | **[💻 CLI Manual](./docs/CLI_REFERENCE.md)** | **[🌐 CI/CD Integration](./CI_CD_INTEGRATION.md)** | **[🏗️ Cluster Setup](./PHASE_2_COMPLETE.md)**
+**[🚀 Read the Vision](./docs/VISION.md)** | **[📄 Technical Whitepaper](./docs/WHITEPAPER.md)** | **[💻 CLI Manual](./docs/CLI_REFERENCE.md)** | **[🌐 CI/CD Integration](./docs/guides/CI_CD_INTEGRATION.md)** | **[🏗️ Cluster Setup](./docs/releases/PHASE_2_COMPLETE.md)**
 
 ---
 
@@ -92,12 +92,14 @@ Visit the [examples/](./examples) directory to see ready-to-use projects:
 
 ## 📋 Documentation Reference
 
+📚 **[Full Documentation Index](./docs/README.md)**
+
 - **[Vision](./docs/VISION.md)**: The philosophy and problem statement.
 - **[Whitepaper](./docs/WHITEPAPER.md)**: Deep technical spec and mathematical foundations.
 - **[CLI Reference](./docs/CLI_REFERENCE.md)**: Detailed command and option manual.
-- **[Cluster Setup](./PHASE_2_COMPLETE.md)**: Enterprise deployment guide.
-- **[Architecture Diagram](./docs/ARCHITECTURE.svg)**: Visual process flow.
-- **[CI/CD Integration](./CI_CD_INTEGRATION.md)**: Blueprint for GitHub Actions, GitLab, and cloud runners.
+- **[Architecture](./docs/ARCHITECTURE.md)**: System design overview.
+- **[Contributing](./docs/development/CONTRIBUTING.md)**: How to contribute.
+- **[Quick Reference](./docs/guides/QUICK_REFERENCE.md)**: Fast command reference.
 
 ---
 
