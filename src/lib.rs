@@ -1,6 +1,9 @@
 pub mod ai;
+pub mod auto_scaling;
 pub mod cache;
+pub mod cache_cluster;
 pub mod cache_utils;
+pub mod cluster_server;
 pub mod constants;
 pub mod core;
 pub mod dashboard;
@@ -19,5 +22,6 @@ pub mod remote_exec;
 pub mod remote_router;
 pub mod reproducible;
 pub mod sandbox;
+pub mod scalable_db;
 
 pub mod server;
