@@ -151,11 +151,8 @@ impl PostgresMetadataStore {
         .await?;
 
         // Remove old mappings
-        tx.execute(
-            "DELETE FROM node_to_layers WHERE node_hash = $1",
-            &[&hash],
-        )
-        .await?;
+        tx.execute("DELETE FROM node_to_layers WHERE node_hash = $1", &[&hash])
+            .await?;
 
         for (pos, layer_hash) in layer_hashes.iter().enumerate() {
             tx.execute(
@@ -283,10 +280,7 @@ impl PostgresMetadataStore {
         let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
 
         let deleted = client
-            .execute(
-                "DELETE FROM cache_entries WHERE last_used < $1",
-                &[&cutoff],
-            )
+            .execute("DELETE FROM cache_entries WHERE last_used < $1", &[&cutoff])
             .await?;
 
         Ok(deleted as i64)
@@ -370,7 +364,10 @@ impl ReplicatedMetadataStore {
         if self._readers.is_empty() {
             &self._writer
         } else {
-            let idx = self._next_reader.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % self._readers.len();
+            let idx = self
+                ._next_reader
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                % self._readers.len();
             &self._readers[idx]
         }
     }
@@ -382,8 +379,14 @@ impl crate::server::metadata::MetadataStoreTrait for PostgresMetadataStore {
         self.insert(hash, path, size as i64).await
     }
 
-    async fn insert_layered_node(&self, hash: &str, size: u64, layer_hashes: &[String]) -> Result<()> {
-        self.insert_layered_node(hash, size as i64, layer_hashes).await
+    async fn insert_layered_node(
+        &self,
+        hash: &str,
+        size: u64,
+        layer_hashes: &[String],
+    ) -> Result<()> {
+        self.insert_layered_node(hash, size as i64, layer_hashes)
+            .await
     }
 
     async fn insert_layer(&self, hash: &str, path: &str, size: u64) -> Result<()> {

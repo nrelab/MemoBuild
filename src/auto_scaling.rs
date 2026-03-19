@@ -96,7 +96,9 @@ impl AutoScaler {
         let last_scale = *self.last_scale_time.read().await;
 
         // Check cooldown period
-        if Utc::now() - last_scale < chrono::Duration::seconds(self.policy.cooldown_period_secs as i64) {
+        if Utc::now() - last_scale
+            < chrono::Duration::seconds(self.policy.cooldown_period_secs as i64)
+        {
             return Ok(());
         }
 
@@ -107,14 +109,19 @@ impl AutoScaler {
             .take(self.policy.stabilization_window_secs as usize)
             .collect();
 
-        let avg_utilization = recent_metrics.iter().map(|m| m.worker_utilization).sum::<f64>()
+        let avg_utilization = recent_metrics
+            .iter()
+            .map(|m| m.worker_utilization)
+            .sum::<f64>()
             / recent_metrics.len() as f64;
-        let avg_queued = recent_metrics.iter().map(|m| m.queued_builds as f64).sum::<f64>()
+        let avg_queued = recent_metrics
+            .iter()
+            .map(|m| m.queued_builds as f64)
+            .sum::<f64>()
             / recent_metrics.len() as f64;
 
         // Scale up conditions
-        let should_scale_up = avg_utilization > self.policy.scale_up_threshold
-            || avg_queued > 5.0; // More than 5 queued builds
+        let should_scale_up = avg_utilization > self.policy.scale_up_threshold || avg_queued > 5.0; // More than 5 queued builds
 
         // Scale down conditions
         let should_scale_down = avg_utilization < self.policy.scale_down_threshold
@@ -138,7 +145,11 @@ impl AutoScaler {
 
     /// Scale to target number of replicas
     async fn scale_to(&self, target_replicas: u32) -> Result<()> {
-        println!("🔄 Scaling from {} to {} replicas", *self.current_replicas.read().await, target_replicas);
+        println!(
+            "🔄 Scaling from {} to {} replicas",
+            *self.current_replicas.read().await,
+            target_replicas
+        );
 
         *self.current_replicas.write().await = target_replicas;
         *self.last_scale_time.write().await = Utc::now();
@@ -166,7 +177,11 @@ impl AutoScaler {
         });
 
         hpa_api
-            .patch("memobuild-scheduler", &PatchParams::default(), &Patch::Merge(&patch))
+            .patch(
+                "memobuild-scheduler",
+                &PatchParams::default(),
+                &Patch::Merge(&patch),
+            )
             .await?;
 
         println!("✅ Updated Kubernetes HPA to {} min replicas", replicas);
@@ -194,7 +209,10 @@ impl AutoScaler {
     }
 
     /// Predict resource needs based on historical data
-    pub async fn predict_resource_needs(&self, time_window_secs: u64) -> Result<ResourcePrediction> {
+    pub async fn predict_resource_needs(
+        &self,
+        time_window_secs: u64,
+    ) -> Result<ResourcePrediction> {
         let history = self.metrics_history.read().await;
 
         if history.is_empty() {
@@ -237,7 +255,9 @@ impl AutoScaler {
         let predicted_utilization = slope * next_x + intercept;
 
         // Convert to replica count
-        let predicted_replicas = if predicted_utilization > self.policy.target_utilization_percent / 100.0 {
+        let predicted_replicas = if predicted_utilization
+            > self.policy.target_utilization_percent / 100.0
+        {
             ((predicted_utilization * 100.0 / self.policy.target_utilization_percent).ceil() as u32)
                 .max(self.policy.min_replicas)
                 .min(self.policy.max_replicas)
@@ -250,8 +270,11 @@ impl AutoScaler {
         Ok(ResourcePrediction {
             predicted_replicas,
             confidence,
-            reasoning: format!("Predicted utilization: {:.1}%, slope: {:.3}",
-                predicted_utilization * 100.0, slope),
+            reasoning: format!(
+                "Predicted utilization: {:.1}%, slope: {:.3}",
+                predicted_utilization * 100.0,
+                slope
+            ),
         })
     }
 }
@@ -340,10 +363,10 @@ impl QueueBasedScaler {
             active_builds: 0, // Would come from worker status
             queued_builds: queue_depth as u32,
             worker_utilization: 0.0, // Would come from worker metrics
-            cache_hit_rate: 0.0, // Would come from cache metrics
-            avg_build_time_ms: 0, // Would come from completed builds
-            memory_usage_mb: 0, // Would come from system metrics
-            cpu_usage_percent: 0.0, // Would come from system metrics
+            cache_hit_rate: 0.0,     // Would come from cache metrics
+            avg_build_time_ms: 0,    // Would come from completed builds
+            memory_usage_mb: 0,      // Would come from system metrics
+            cpu_usage_percent: 0.0,  // Would come from system metrics
         };
 
         // Record metrics for scaling decision
@@ -368,12 +391,13 @@ impl QueueBasedScaler {
             0
         };
 
-        let priority_distribution: std::collections::HashMap<u8, usize> = queue
-            .iter()
-            .fold(std::collections::HashMap::new(), |mut acc, req| {
-                *acc.entry(req.priority).or_insert(0) += 1;
-                acc
-            });
+        let priority_distribution: std::collections::HashMap<u8, usize> =
+            queue
+                .iter()
+                .fold(std::collections::HashMap::new(), |mut acc, req| {
+                    *acc.entry(req.priority).or_insert(0) += 1;
+                    acc
+                });
 
         Ok(QueueStats {
             total_queued,

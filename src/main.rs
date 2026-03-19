@@ -151,7 +151,18 @@ async fn main() -> Result<()> {
             dry_run,
             sandbox,
             remote_exec,
-        } => run_build(path, file, push, reproducible, dry_run, sandbox, remote_exec).await,
+        } => {
+            run_build(
+                path,
+                file,
+                push,
+                reproducible,
+                dry_run,
+                sandbox,
+                remote_exec,
+            )
+            .await
+        }
         Commands::Graph { path, file } => run_graph(path, file).await,
         Commands::ExplainCache { path, file, node } => run_explain_cache(path, file, node).await,
         Commands::Server { port } => {
@@ -161,12 +172,20 @@ async fn main() -> Result<()> {
             server::start_server(port, data_dir, webhook_url).await
         }
         Commands::Scheduler { port } => start_scheduler(port).await,
-        Commands::Worker { port, sandbox, scheduler_url } => start_worker(port, sandbox, scheduler_url).await,
+        Commands::Worker {
+            port,
+            sandbox,
+            scheduler_url,
+        } => start_worker(port, sandbox, scheduler_url).await,
         Commands::Pull { image } => run_pull(image).await,
         Commands::GenerateCi { provider } => run_generate_ci(provider).await,
-        Commands::Cluster { port, node_id, peers, postgres, database_url } => {
-            start_cluster_server(port, node_id, peers, postgres, database_url).await
-        }
+        Commands::Cluster {
+            port,
+            node_id,
+            peers,
+            postgres,
+            database_url,
+        } => start_cluster_server(port, node_id, peers, postgres, database_url).await,
     }
 }
 
@@ -264,7 +283,9 @@ async fn run_build(
     // Configure remote execution if requested
     if remote_exec {
         if let Ok(scheduler_url) = std::env::var("MEMOBUILD_SCHEDULER_URL") {
-            let remote_client = Arc::new(memobuild::remote_exec::client::RemoteExecClient::new(&scheduler_url));
+            let remote_client = Arc::new(memobuild::remote_exec::client::RemoteExecClient::new(
+                &scheduler_url,
+            ));
             executor = executor.with_remote_executor(remote_client);
             println!("📡 Using remote execution via scheduler: {}", scheduler_url);
         } else {
@@ -434,10 +455,13 @@ async fn _run_generate_k8s() -> Result<()> {
 async fn start_scheduler(_port: u16) -> Result<()> {
     #[cfg(feature = "remote-exec")]
     {
-        use memobuild::remote_exec::{scheduler::Scheduler, server::ExecutionServer};
         use memobuild::remote_exec::scheduler::SchedulingStrategy;
+        use memobuild::remote_exec::{scheduler::Scheduler, server::ExecutionServer};
 
-        println!("📡 Starting Remote Execution Scheduler on port {}...", _port);
+        println!(
+            "📡 Starting Remote Execution Scheduler on port {}...",
+            _port
+        );
 
         // For MVP, start with empty worker list - workers will register dynamically
         // In production, this would discover workers via service registry
@@ -450,13 +474,20 @@ async fn start_scheduler(_port: u16) -> Result<()> {
     anyhow::bail!("Remote Execution feature not enabled. Build with --features remote-exec")
 }
 
-async fn start_worker(_port: u16, _sandbox_type: String, _scheduler_url: Option<String>) -> Result<()> {
+async fn start_worker(
+    _port: u16,
+    _sandbox_type: String,
+    _scheduler_url: Option<String>,
+) -> Result<()> {
     #[cfg(feature = "remote-exec")]
     {
         use memobuild::remote_exec::{worker::WorkerNode, worker_server::WorkerServer};
         use memobuild::sandbox;
 
-        println!("🔧 Starting Worker Node on port {} with {} sandbox...", _port, _sandbox_type);
+        println!(
+            "🔧 Starting Worker Node on port {} with {} sandbox...",
+            _port, _sandbox_type
+        );
 
         // Initialize cache (same as build command)
         let cache = create_cache().await?;
@@ -515,7 +546,10 @@ async fn start_cluster_server(
             let peer_addr = peer_addr.trim();
             if !peer_addr.is_empty() {
                 let peer_node = memobuild::cache_cluster::ClusterNode {
-                    id: format!("peer-{}", peer_addr.replace("http://", "").replace(":", "-")),
+                    id: format!(
+                        "peer-{}",
+                        peer_addr.replace("http://", "").replace(":", "-")
+                    ),
                     address: peer_addr.to_string(),
                     weight: 100,
                     region: Some("peer".to_string()),
@@ -543,13 +577,14 @@ async fn start_cluster_server(
     };
 
     let storage = Arc::new(crate::server::storage::LocalStorage::new(
-        &std::env::current_dir()?.join(".memobuild-cluster")
+        &std::env::current_dir()?.join(".memobuild-cluster"),
     )?);
 
     // Create distributed cache
-    let local_cache = Arc::new(memobuild::remote_cache::HttpRemoteCache::new(
-        format!("http://localhost:{}", port)
-    ));
+    let local_cache = Arc::new(memobuild::remote_cache::HttpRemoteCache::new(format!(
+        "http://localhost:{}",
+        port
+    )));
     let distributed_cache = Arc::new(memobuild::cache_cluster::DistributedCache::new(
         cluster.clone(),
         local_cache,
@@ -587,7 +622,9 @@ async fn start_cluster_server(
 
 fn parse_postgres_url(url: &str) -> Result<memobuild::scalable_db::PostgresConfig> {
     // Simple URL parser for demo - in production use a proper URL parser
-    let url = url.trim_start_matches("postgresql://").trim_start_matches("postgres://");
+    let url = url
+        .trim_start_matches("postgresql://")
+        .trim_start_matches("postgres://");
     let parts: Vec<&str> = url.split('@').collect();
     if parts.len() != 2 {
         anyhow::bail!("Invalid PostgreSQL URL format");

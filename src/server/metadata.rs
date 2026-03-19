@@ -7,7 +7,12 @@ use std::sync::Mutex;
 #[async_trait]
 pub trait MetadataStoreTrait: Send + Sync {
     async fn insert(&self, hash: &str, path: &str, size: u64) -> Result<()>;
-    async fn insert_layered_node(&self, hash: &str, size: u64, layer_hashes: &[String]) -> Result<()>;
+    async fn insert_layered_node(
+        &self,
+        hash: &str,
+        size: u64,
+        layer_hashes: &[String],
+    ) -> Result<()>;
     async fn insert_layer(&self, hash: &str, path: &str, size: u64) -> Result<()>;
     async fn get_node_layers(&self, hash: &str) -> Result<Option<Vec<String>>>;
     async fn layer_exists(&self, hash: &str) -> Result<bool>;
@@ -370,7 +375,12 @@ impl MetadataStoreTrait for MetadataStore {
         MetadataStore::insert(self, hash, path, size)
     }
 
-    async fn insert_layered_node(&self, hash: &str, size: u64, layer_hashes: &[String]) -> Result<()> {
+    async fn insert_layered_node(
+        &self,
+        hash: &str,
+        size: u64,
+        layer_hashes: &[String],
+    ) -> Result<()> {
         MetadataStore::insert_layered_node(self, hash, size, layer_hashes)
     }
 

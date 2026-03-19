@@ -1,9 +1,9 @@
 use crate::remote_exec::{ActionRequest, ActionResult, RemoteExecutor};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedulingStrategy {
@@ -36,7 +36,10 @@ impl Scheduler {
 
     pub async fn get_available_workers(&self) -> Vec<(String, String)> {
         let endpoints = self.worker_endpoints.lock().await;
-        endpoints.iter().map(|(id, endpoint)| (id.clone(), endpoint.clone())).collect()
+        endpoints
+            .iter()
+            .map(|(id, endpoint)| (id.clone(), endpoint.clone()))
+            .collect()
     }
 
     async fn select_worker(&self, action: &ActionRequest) -> Result<String> {

@@ -1,9 +1,9 @@
 use crate::remote_exec::{worker::WorkerNode, ActionRequest, ActionResult};
 use anyhow::Result;
 use axum::{http::StatusCode, routing::post, Extension, Json, Router};
+use reqwest::Client;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use reqwest::Client;
 
 #[derive(serde::Serialize)]
 struct WorkerRegistration {
@@ -53,7 +53,10 @@ impl WorkerServer {
         };
 
         let url = format!("{}/workers/register", scheduler_url.trim_end_matches('/'));
-        println!("📡 Registering worker {} with scheduler at {}", self.worker.id, url);
+        println!(
+            "📡 Registering worker {} with scheduler at {}",
+            self.worker.id, url
+        );
 
         let response = client
             .post(&url)
@@ -68,7 +71,10 @@ impl WorkerServer {
             anyhow::bail!("Scheduler registration failed: {} - {}", status, err_text);
         }
 
-        println!("✅ Worker {} successfully registered with scheduler", self.worker.id);
+        println!(
+            "✅ Worker {} successfully registered with scheduler",
+            self.worker.id
+        );
         Ok(())
     }
 }

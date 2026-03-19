@@ -16,7 +16,7 @@ use tokio::sync::RwLock;
 pub struct ClusterNode {
     pub id: String,
     pub address: String,
-    pub weight: u32, // For load balancing
+    pub weight: u32,            // For load balancing
     pub region: Option<String>, // For geo-distribution
 }
 
@@ -208,10 +208,7 @@ pub struct DistributedCache {
 }
 
 impl DistributedCache {
-    pub fn new(
-        cluster: Arc<CacheCluster>,
-        local_cache: Arc<dyn RemoteCache>,
-    ) -> Self {
+    pub fn new(cluster: Arc<CacheCluster>, local_cache: Arc<dyn RemoteCache>) -> Self {
         Self {
             cluster,
             local_cache,
@@ -335,10 +332,7 @@ impl RemoteCache for DistributedCache {
 
         // Wait for replication (with timeout)
         for task in replication_tasks {
-            let _ = tokio::time::timeout(
-                std::time::Duration::from_secs(30),
-                task
-            ).await;
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(30), task).await;
         }
 
         Ok(())
@@ -368,7 +362,9 @@ impl RemoteCache for DistributedCache {
         layers: &[String],
         total_size: u64,
     ) -> Result<()> {
-        self.local_cache.register_node_layers(hash, layers, total_size).await
+        self.local_cache
+            .register_node_layers(hash, layers, total_size)
+            .await
     }
 
     async fn report_build_event(&self, event: crate::dashboard::BuildEvent) -> Result<()> {
@@ -380,6 +376,8 @@ impl RemoteCache for DistributedCache {
     }
 
     async fn report_analytics(&self, dirty: u32, cached: u32, duration_ms: u64) -> Result<()> {
-        self.local_cache.report_analytics(dirty, cached, duration_ms).await
+        self.local_cache
+            .report_analytics(dirty, cached, duration_ms)
+            .await
     }
 }

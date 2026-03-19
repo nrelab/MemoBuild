@@ -60,27 +60,42 @@ impl ClusterServer {
             .route("/cache/layer/:hash", axum::routing::head(check_layer))
             .route("/cache/layer/:hash", axum::routing::get(get_layer))
             .route("/cache/layer/:hash", axum::routing::put(put_layer))
-            .route("/cache/node/:hash/layers", axum::routing::get(get_node_layers))
-            .route("/cache/node/:hash/layers", axum::routing::post(register_node_layers))
-
+            .route(
+                "/cache/node/:hash/layers",
+                axum::routing::get(get_node_layers),
+            )
+            .route(
+                "/cache/node/:hash/layers",
+                axum::routing::post(register_node_layers),
+            )
             // Cluster management endpoints
             .route("/cluster/status", axum::routing::get(get_cluster_status))
             .route("/cluster/nodes", axum::routing::post(add_cluster_node))
-            .route("/cluster/nodes/:node_id", axum::routing::delete(remove_cluster_node))
-
+            .route(
+                "/cluster/nodes/:node_id",
+                axum::routing::delete(remove_cluster_node),
+            )
             // Auto-scaling endpoints
             .route("/scaling/status", axum::routing::get(get_scaling_status))
-            .route("/scaling/metrics", axum::routing::post(record_scaling_metrics))
+            .route(
+                "/scaling/metrics",
+                axum::routing::post(record_scaling_metrics),
+            )
             .route("/scaling/predict", axum::routing::get(predict_resources))
-
             // Health check
             .route("/health", axum::routing::get(health_check))
             .with_state(state);
 
         let addr = SocketAddr::from(([127, 0, 0, 1], port));
         println!("🏗️ MemoBuild Clustered Cache Server running on {}", addr);
-        println!("   📊 Cluster Status: http://localhost:{}/cluster/status", port);
-        println!("   ⚖️  Scaling Status: http://localhost:{}/scaling/status", port);
+        println!(
+            "   📊 Cluster Status: http://localhost:{}/cluster/status",
+            port
+        );
+        println!(
+            "   ⚖️  Scaling Status: http://localhost:{}/scaling/status",
+            port
+        );
 
         axum::Server::bind(&addr)
             .serve(app.into_make_service())
@@ -274,7 +289,11 @@ async fn register_node_layers(
     Path(hash): Path<String>,
     Json(req): Json<RegisterLayersRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    match state.distributed_cache.register_node_layers(&hash, &req.layers, req.total_size).await {
+    match state
+        .distributed_cache
+        .register_node_layers(&hash, &req.layers, req.total_size)
+        .await
+    {
         Ok(_) => Ok(StatusCode::OK),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }

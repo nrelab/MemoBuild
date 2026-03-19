@@ -1,10 +1,14 @@
 use crate::remote_exec::{scheduler::Scheduler, ActionRequest, ActionResult};
 use anyhow::Result;
-use axum::{http::StatusCode, routing::{post, get}, Extension, Json, Router};
+use axum::{
+    http::StatusCode,
+    routing::{get, post},
+    Extension, Json, Router,
+};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::collections::HashMap;
 
 #[derive(serde::Deserialize)]
 struct WorkerRegistration {
@@ -54,7 +58,9 @@ async fn handle_register_worker(
     Extension(scheduler): Extension<Arc<Scheduler>>,
     Json(registration): Json<WorkerRegistration>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    scheduler.register_worker(registration.worker_id.clone(), registration.endpoint).await;
+    scheduler
+        .register_worker(registration.worker_id.clone(), registration.endpoint)
+        .await;
 
     Ok(Json(serde_json::json!({
         "status": "registered",
@@ -62,9 +68,7 @@ async fn handle_register_worker(
     })))
 }
 
-async fn handle_list_workers(
-    Extension(scheduler): Extension<Arc<Scheduler>>,
-) -> Json<Vec<String>> {
+async fn handle_list_workers(Extension(scheduler): Extension<Arc<Scheduler>>) -> Json<Vec<String>> {
     let workers = scheduler.get_available_workers().await;
     let worker_ids: Vec<String> = workers.into_iter().map(|(id, _)| id).collect();
     Json(worker_ids)
