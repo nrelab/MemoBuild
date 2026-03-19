@@ -441,7 +441,7 @@ async fn run_pull(full_name: String) -> Result<()> {
 
 async fn run_generate_ci(provider: String) -> Result<()> {
     if provider == "github" {
-        let _yaml = include_str!("../PHASE_1_COMPLETE.md"); // Placeholder for actual template
+        let _yaml = include_str!("../docs/releases/PHASE_1_COMPLETE.md"); // Placeholder for actual template
         println!("✅ GitHub Actions workflow generated");
     }
     Ok(())

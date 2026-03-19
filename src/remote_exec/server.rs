@@ -5,10 +5,8 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 #[derive(serde::Deserialize)]
 struct WorkerRegistration {
