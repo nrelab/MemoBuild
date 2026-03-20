@@ -349,7 +349,23 @@ impl RemoteCache for DistributedCache {
     }
 
     async fn put_layer(&self, hash: &str, data: &[u8]) -> Result<()> {
-        self.local_cache.put_layer(hash, data).await
+        // Store locally first
+        self.local_cache.put_layer(hash, data).await?;
+
+        // Replicate to cluster nodes (same logic as put method)
+        let replicas = self.cluster.get_replica_nodes(hash).await?;
+        let remote_clients = self.remote_clients.read().await;
+        
+        for replica_id in replicas {
+            if let Some(client) = remote_clients.get(&replica_id) {
+                if let Err(e) = client.put_layer(hash, data).await {
+                    eprintln!("⚠️  Failed to replicate layer {} to node {}: {}", hash, replica_id, e);
+                    // Continue with other replicas - don't fail the operation
+                }
+            }
+        }
+        
+        Ok(())
     }
 
     async fn get_node_layers(&self, hash: &str) -> Result<Option<Vec<String>>> {

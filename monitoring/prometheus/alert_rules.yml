@@ -1,0 +1,116 @@
+groups:
+  - name: memobuild.rules
+    rules:
+      # Cluster Health Alerts
+      - alert: MemoBuildNodeDown
+        expr: up{job="memobuild-nodes"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "MemoBuild node {{ $labels.instance }} is down"
+          description: "MemoBuild node {{ $labels.instance }} has been down for more than 30 seconds"
+
+      - alert: MemoBuildHighLatency
+        expr: memobuild_request_duration_seconds{quantile="0.95"} > 1.0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High request latency on {{ $labels.instance }}"
+          description: "95th percentile latency is {{ $value }}s on {{ $labels.instance }}"
+
+      # Database Alerts
+      - alert: PostgreSQLDown
+        expr: up{job="postgres"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL has been down for more than 30 seconds"
+
+      - alert: PostgreSQLHighConnections
+        expr: pg_stat_activity_count > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of PostgreSQL connections"
+          description: "PostgreSQL has {{ $value }} active connections"
+
+      # Redis Alerts
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been down for more than 30 seconds"
+
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis high memory usage"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}"
+
+      # Storage Alerts
+      - alert: MinIODown
+        expr: up{job="minio"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "MinIO is down"
+          description: "MinIO has been down for more than 30 seconds"
+
+      - alert: MinIOHighDiskUsage
+        expr: minio_disk_free_bytes / minio_disk_total_bytes < 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MinIO low disk space"
+          description: "MinIO has only {{ $value | humanizePercentage }} free disk space"
+
+      # Build Performance Alerts
+      - alert: MemoBuildHighFailureRate
+        expr: rate(memobuild_build_failures_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High build failure rate"
+          description: "Build failure rate is {{ $value | humanizePercentage }} on {{ $labels.instance }}"
+
+      - alert: MemoBuildLowCacheHitRate
+        expr: rate(memobuild_cache_hits_total[5m]) / (rate(memobuild_cache_hits_total[5m]) + rate(memobuild_cache_misses_total[5m])) < 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} on {{ $labels.instance }}"
+
+      # Resource Alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }}"
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }}"
