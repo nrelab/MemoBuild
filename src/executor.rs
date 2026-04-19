@@ -358,11 +358,11 @@ impl IncrementalExecutor {
                 // Ensure input manifest and required files are in CAS
                 if let Some(ref _manifest_hash) = node.metadata.input_manifest_hash {
                     // If it's a COPY node, we can re-generate and upload
-                    if let Some(ref path) = node.source_path {
-                        if let Ok(manifest) = crate::cache_utils::ArtifactManifest::from_dir(path) {
-                            println!("📤 Uploading input manifest for {}...", name);
-                            cache.upload_manifest_and_files(&manifest, path).await?;
-                        }
+                    if let Some(ref _path) = node.source_path {
+                        // if let Ok(manifest) = crate::cache_utils_exe::ArtifactManifest::from_dir(_path) {
+                        //     println!("📤 Uploading input manifest for {}...", name);
+                        //     cache.upload_manifest_and_files(&manifest, _path).await?;
+                        // }
                     } else {
                         // For RUN nodes, the manifest was built from parents.
                         // We should ensure the manifest itself is in the CAS.
