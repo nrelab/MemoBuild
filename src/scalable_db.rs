@@ -101,10 +101,15 @@ impl PostgresMetadataStore {
                     FOREIGN KEY(layer_hash) REFERENCES cache_layers(layer_hash) ON DELETE CASCADE
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_cache_entries_last_used ON cache_entries(last_used);
-                CREATE INDEX IF NOT EXISTS idx_cache_entries_hit_count ON cache_entries(hit_count);
-                CREATE INDEX IF NOT EXISTS idx_cache_layers_last_used ON cache_layers(last_used);
-                CREATE INDEX IF NOT EXISTS idx_node_to_layers_node_hash ON node_to_layers(node_hash);
+                CREATE TABLE IF NOT EXISTS auth_tokens (
+                    id SERIAL PRIMARY KEY,
+                    token_hash TEXT UNIQUE NOT NULL,
+                    description TEXT,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    active BOOLEAN DEFAULT TRUE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_auth_tokens_active ON auth_tokens(active);
                 "#,
             )
             .await?;

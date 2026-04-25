@@ -83,9 +83,9 @@ In `Dockerfile.server` and all K8s manifests:
 * `capabilities.drop: ["ALL"]`.
 * Seccomp profile: `RuntimeDefault`.
 ***
-## Phase 2 — Object Storage Backend (v0.5.1) — 3 weeks
+## Phase 2 — Object Storage Backend (v0.5.1) — 3 weeks [DONE]
 **Goal:** Decouple blob storage from local disk. Required for stateless horizontal scaling of cache nodes.
-### 2.1 `ArtifactStorage` S3/GCS Backend
+### 2.1 `ArtifactStorage` S3/GCS Backend [DONE]
 Add `src/storage/` module:
 * `src/storage/mod.rs`: extend existing `ArtifactStorage` trait with `stream_get(&str) -> impl Stream<Item=Bytes>`.
 * `src/storage/s3.rs`: `S3Storage` using `aws-sdk-s3` — multipart upload for artifacts > 5 MB, presigned URLs for direct client downloads.
@@ -93,12 +93,12 @@ Add `src/storage/` module:
 * `src/storage/local.rs`: existing filesystem backend, retained for single-node / dev mode.
 Config via `MEMOBUILD_STORAGE_BACKEND=s3|gcs|local`, `MEMOBUILD_STORAGE_BUCKET`.
 MinIO compatibility: same S3 SDK, `MEMOBUILD_STORAGE_ENDPOINT` override.
-### 2.2 Redis L1 Distributed Cache
-Add `src/cache/redis.rs`: `RedisCache` implementing `RemoteCache` via `fred` async Redis client.
+### 2.2 Redis L1 Distributed Cache [DONE]
+Add `src/cache_redis.rs`: `RedisCache` implementing `RemoteCache` via `fred` async Redis client.
 * Hot path: cache node checks Redis before hitting object storage. Cache TTL configurable.
 * Invalidation: `PUBLISH memobuild:evict:<hash>` on GC.
 Config: `MEMOBUILD_REDIS_URL=redis://localhost:6379`.
-### 2.3 Automated Garbage Collection
+### 2.3 Automated Garbage Collection [DONE]
 * `src/gc.rs`: `GarbageCollector` with configurable retention policy (age-based + LRU size-based).
 * Tokio scheduled task: runs every 6 hours by default (`MEMOBUILD_GC_INTERVAL_HOURS`).
 * GC respects replication factor: only delete artifact from object storage when confirmed absent from all nodes.

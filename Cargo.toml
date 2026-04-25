@@ -45,6 +45,26 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt", "ansi"] }
 clap = { version = "4.4", features = ["derive", "env"] }
 chrono = { version = "0.4", features = ["serde"] }
+rustls = "0.21"
+rustls-pemfile = "1.0"
+axum-server = { version = "0.5", features = ["tls-rustls"] }
+rcgen = "0.11"
+tower_governor = "0.3"
+governor = "0.6"
+argon2 = "0.5"
+vaultrs = "0.7"
+base64 = "0.21"
+
+# Phase 2: Object storage + Redis + metrics
+fred = { version = "6", features = ["serde-json"] }
+aws-sdk-s3 = "0.35"
+aws-config = "0.57"
+google-cloud-storage = "0.14"
+prometheus-client = "0.22"
+#opentelemetry = { version = "0.31", features = ["rt-tokio"] }
+#opentelemetry-otlp = "0.31"
+#tracing-opentelemetry = "0.31"
+uuid = { version = "1", features = ["v4"] }
 
 colored = "3.1.1"
 indicatif = "0.18.4"
@@ -64,4 +84,5 @@ tempfile = "3"
 
 [[bench]]
 name = "core_bench"
+path = "benches/core_bench.rs"
 harness = false

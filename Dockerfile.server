@@ -29,7 +29,10 @@ LABEL org.opencontainers.image.title="MemoBuild" \
       org.opencontainers.image.source="https://github.com/nrelab/MemoBuild" \
       org.opencontainers.image.revision="" \
       org.opencontainers.image.created="" \
-      org.opencontainers.image.documentation="https://github.com/nrelab/MemoBuild/docs"
+      org.opencontainers.image.documentation="https://github.com/nrelab/MemoBuild/docs" \
+      org.opencontainers.image.ref-name="main" \
+      org.opencontainers.image.artifactsbom.mediaType="application/vnd.cyclonedx+json" \
+      org.opencontainers.image.artifactsbom.uri="https://github.com/nrelab/MemoBuild/releases/latest/download/memobuild.spdx.json"
 
 # Copy binary from builder stage
 COPY --from=builder /app/target/${TARGETARCH}-unknown-linux-gnu/release/memobuild /usr/local/bin/memobuild
@@ -37,14 +40,25 @@ COPY --from=builder /app/target/${TARGETARCH}-unknown-linux-gnu/release/memobuil
 # Copy CA certificates
 COPY --from=ca-certs /etc/ssl/certs /etc/ssl/certs
 
-# Create non-root user directories
+# Create non-root user (distroless nonroot UID)
+# Security: runs as non-root, no privilege escalation, no capabilities
 USER 65532:65532
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD ["memobuild", "health"]
 
+# Non-root user cannot bind to privileged ports
 EXPOSE 8080
 
 ENTRYPOINT ["memobuild"]
 CMD ["server", "--port", "8080"]
+
+# Security annotations (for Kubernetes Pod Security Standards)
+# Pod Security Standards: restricted profile
+# - runAsNonRoot: true (enforced by USER directive)
+# - runAsUser: 65532 (distroless nonroot)
+# - readOnlyRootFilesystem: should be enabled via Pod spec or volume mount
+# - allowPrivilegeEscalation: false (default for non-root)
+# - capabilities.drop: ALL (distroless has minimal caps by default)
+# - seccompProfile: RuntimeDefault (set via Pod spec annotation)

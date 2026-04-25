@@ -1,11 +1,12 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use memobuild::server;
-use memobuild::{cache, core, docker, executor, export, logging};
+use memobuild::{cache, docker, executor, export, logging, core};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio_postgres::NoTls;
 
 #[derive(Parser)]
 #[command(name = "memobuild")]
@@ -79,6 +80,14 @@ enum Commands {
         /// Port to listen on
         #[arg(short, long, default_value_t = 8080)]
         port: u16,
+
+        /// Enable PostgreSQL storage
+        #[arg(long)]
+        postgres: bool,
+
+        /// PostgreSQL connection string
+        #[arg(long, env = "DATABASE_URL")]
+        database_url: Option<String>,
     },
     /// Start the Execution Scheduler
     Scheduler {
@@ -165,11 +174,47 @@ async fn main() -> Result<()> {
         }
         Commands::Graph { path, file } => run_graph(path, file).await,
         Commands::ExplainCache { path, file, node } => run_explain_cache(path, file, node).await,
-        Commands::Server { port } => {
+        Commands::Server { port, postgres, database_url } => {
             let webhook_url = env::var("MEMOBUILD_WEBHOOK").ok();
             let data_dir = env::current_dir()?.join(".memobuild-server");
             fs::create_dir_all(&data_dir)?;
-            server::start_server(port, data_dir, webhook_url).await
+
+            // Load TLS config if provided
+            let tls_config = if let (Ok(cert), Ok(key), Ok(ca)) = (
+                env::var("MEMOBUILD_TLS_CERT"),
+                env::var("MEMOBUILD_TLS_KEY"),
+                env::var("MEMOBUILD_TLS_CA"),
+            ) {
+                Some(memobuild::tls::TlsConfig::from_files(&cert, &key, &ca)?)
+            } else {
+                None
+            };
+
+            let admin_token = env::var("MEMOBUILD_ADMIN_TOKEN").ok();
+
+            // Create auth database client if PostgreSQL is enabled
+            let auth_db_client = if postgres {
+                if let Some(db_url) = database_url.as_ref() {
+                    let config = parse_postgres_url(db_url)?;
+                    let (client, connection) = tokio_postgres::connect(
+                        &format!("postgresql://{}:{}@{}:{}/{}",
+                            config.user, config.password, config.host, config.port, config.database),
+                        NoTls,
+                    ).await?;
+                    tokio::spawn(async move {
+                        if let Err(e) = connection.await {
+                            eprintln!("connection error: {}", e);
+                        }
+                    });
+                    Some(client)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            server::start_server(port, data_dir, webhook_url, tls_config, admin_token, auth_db_client).await
         }
         Commands::Scheduler { port } => start_scheduler(port).await,
         Commands::Worker {
@@ -409,12 +454,7 @@ async fn run_explain_cache(
 }
 
 async fn create_cache() -> Result<cache::HybridCache> {
-    let remote_url = env::var("MEMOBUILD_REMOTE_URL").ok();
-    let remote_cache = remote_url.map(|url| {
-        Arc::new(memobuild::remote_cache::HttpRemoteCache::new(url))
-            as Arc<dyn memobuild::remote_cache::RemoteCache>
-    });
-    cache::HybridCache::new_with_box(remote_cache)
+    cache::HybridCache::new(None)
 }
 
 async fn _pull_base_images(instructions: &[docker::parser::Instruction]) -> Result<()> {

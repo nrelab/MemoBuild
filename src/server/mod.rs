@@ -1,5 +1,6 @@
 use crate::server::metadata::MetadataStore;
 use crate::server::storage::{ArtifactStorage, LocalStorage};
+use crate::storage::storage_from_env;
 use anyhow::Result;
 use axum::{
     body::Bytes,
@@ -19,6 +20,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::broadcast;
+// use tower_governor::GovernorLayer;
 
 pub mod metadata;
 pub mod storage;
@@ -29,6 +31,7 @@ pub struct AppState {
     pub webhook_url: Option<String>,
     pub tx_events: broadcast::Sender<crate::dashboard::BuildEvent>,
     pub current_dag: Arc<std::sync::Mutex<Option<crate::graph::BuildGraph>>>,
+    pub auth_state: Arc<crate::auth::AuthState>,
 }
 
 #[derive(Deserialize)]
@@ -52,13 +55,25 @@ async fn add_api_version_header<B>(req: Request<B>, next: Next<B>) -> Response {
     response
 }
 
-pub async fn start_server(port: u16, data_dir: PathBuf, webhook_url: Option<String>) -> Result<()> {
+pub async fn start_server(
+    port: u16,
+    data_dir: PathBuf,
+    webhook_url: Option<String>,
+    tls_config: Option<crate::tls::TlsConfig>,
+    admin_token: Option<String>,
+    auth_db_client: Option<tokio_postgres::Client>,
+) -> Result<()> {
     let db_path = data_dir.join("metadata.db");
     let metadata = MetadataStore::new(&db_path)?;
-    let storage = Arc::new(LocalStorage::new(&data_dir)?);
+    let storage: Arc<dyn ArtifactStorage> = match storage_from_env(&data_dir) {
+        Ok(s) => Arc::from(s),
+        Err(_) => Arc::new(LocalStorage::new(&data_dir)?),
+    };
 
     let (tx_events, _) = broadcast::channel(crate::constants::MAX_WS_BROADCAST_CAPACITY);
     let current_dag = Arc::new(std::sync::Mutex::new(None));
+
+    let auth_state = Arc::new(crate::auth::AuthState::new(admin_token, auth_db_client));
 
     let state = Arc::new(AppState {
         metadata,
@@ -66,6 +81,7 @@ pub async fn start_server(port: u16, data_dir: PathBuf, webhook_url: Option<Stri
         webhook_url,
         tx_events,
         current_dag,
+        auth_state,
     });
 
     let app = Router::new()
@@ -80,6 +96,8 @@ pub async fn start_server(port: u16, data_dir: PathBuf, webhook_url: Option<Stri
         .route("/cache/node/:hash/layers", get(get_node_layers))
         .route("/cache/node/:hash/layers", post(register_node_layers))
         .route("/gc", post(gc_cache))
+        .route("/gc/status", get(gc_status))
+        .route("/metrics", get(metrics_handler))
         .route("/analytics", post(report_analytics))
         .route("/build-event", post(receive_build_event))
         .route("/dag", post(register_dag))
@@ -88,14 +106,23 @@ pub async fn start_server(port: u16, data_dir: PathBuf, webhook_url: Option<Stri
         .route("/api/layers", get(get_layer_stats_handler))
         .route("/ws", get(ws_handler))
         .layer(middleware::from_fn(add_api_version_header))
+        // Add auth routes
+        
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     println!("🌐 MemoBuild Remote Cache Server running on {}", addr);
 
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await?;
+    if let Some(tls) = tls_config {
+        let rustls_config = tls.axum_rustls_config()?;
+        axum_server::bind_rustls(addr, rustls_config)
+            .serve(app.into_make_service())
+            .await?;
+    } else {
+        axum::Server::bind(&addr)
+            .serve(app.into_make_service())
+            .await?;
+    }
 
     Ok(())
 }
@@ -568,6 +595,23 @@ async fn gc_cache(
             (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
         }
     }
+}
+
+async fn gc_status() -> impl IntoResponse {
+    let gc = crate::gc::GarbageCollector::from_env();
+    let status = gc.status().await;
+    (StatusCode::OK, Json(status)).into_response()
+}
+
+async fn metrics_handler() -> impl IntoResponse {
+    let registry = crate::metrics::metrics_registry();
+    let metrics = registry.read().await;
+    let output = metrics.encode();
+    (
+        StatusCode::OK,
+        axum::response::AppendHeaders([(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")]),
+        output,
+    ).into_response()
 }
 
 async fn check_layer(

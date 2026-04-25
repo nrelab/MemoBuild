@@ -341,15 +341,110 @@ impl RemoteCache for DistributedCache {
     // Layered cache methods delegate to local cache for simplicity
     // In production, these would also be distributed
     async fn has_layer(&self, hash: &str) -> Result<bool> {
-        self.local_cache.has_layer(hash).await
+        // Check local first
+        if self.local_cache.has_layer(hash).await? {
+            return Ok(true);
+        }
+
+        // Check primary node
+        if let Some(primary_node) = self.cluster.get_primary_node(hash).await? {
+            if let Some(client) = self.get_remote_client(&primary_node).await {
+                if client.has_layer(hash).await? {
+                    return Ok(true);
+                }
+            }
+        }
+
+        // Check replicas
+        let replicas = self.cluster.get_replica_nodes(hash).await?;
+        for replica_node in replicas {
+            if let Some(client) = self.get_remote_client(&replica_node).await {
+                if client.has_layer(hash).await? {
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
     }
 
     async fn get_layer(&self, hash: &str) -> Result<Option<Vec<u8>>> {
-        self.local_cache.get_layer(hash).await
+        // Try local first
+        if let Some(data) = self.local_cache.get_layer(hash).await? {
+            return Ok(Some(data));
+        }
+
+        // Try primary node
+        if let Some(primary_node) = self.cluster.get_primary_node(hash).await? {
+            if let Some(client) = self.get_remote_client(&primary_node).await {
+                if let Some(data) = client.get_layer(hash).await? {
+                    // Cache locally for future requests
+                    self.local_cache.put_layer(hash, &data).await?;
+                    return Ok(Some(data));
+                }
+            }
+        }
+
+        // Try replicas
+        let replicas = self.cluster.get_replica_nodes(hash).await?;
+        for replica_node in replicas {
+            if let Some(client) = self.get_remote_client(&replica_node).await {
+                if let Some(data) = client.get_layer(hash).await? {
+                    // Cache locally and replicate to primary
+                    self.local_cache.put_layer(hash, &data).await?;
+                    if let Some(primary_node) = self.cluster.get_primary_node(hash).await? {
+                        if let Some(primary_client) = self.get_remote_client(&primary_node).await {
+                            let _ = primary_client.put_layer(hash, &data).await; // Best effort
+                        }
+                    }
+                    return Ok(Some(data));
+                }
+            }
+        }
+
+        Ok(None)
     }
 
     async fn put_layer(&self, hash: &str, data: &[u8]) -> Result<()> {
-        self.local_cache.put_layer(hash, data).await
+        // Store locally first
+        self.local_cache.put_layer(hash, data).await?;
+
+        // Replicate to primary and replicas
+        let primary_node = self.cluster.get_primary_node(hash).await?;
+        let replica_nodes = self.cluster.get_replica_nodes(hash).await?;
+
+        let mut replication_tasks = Vec::new();
+
+        // Replicate to primary
+        if let Some(primary) = primary_node {
+            if let Some(client) = self.get_remote_client(&primary).await {
+                let hash = hash.to_string();
+                let data = data.to_vec();
+                let task = tokio::spawn(async move {
+                    let _ = client.put_layer(&hash, &data).await;
+                });
+                replication_tasks.push(task);
+            }
+        }
+
+        // Replicate to replicas
+        for replica in replica_nodes {
+            if let Some(client) = self.get_remote_client(&replica).await {
+                let hash = hash.to_string();
+                let data = data.to_vec();
+                let task = tokio::spawn(async move {
+                    let _ = client.put_layer(&hash, &data).await;
+                });
+                replication_tasks.push(task);
+            }
+        }
+
+        // Wait for replication (with timeout)
+        for task in replication_tasks {
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(30), task).await;
+        }
+
+        Ok(())
     }
 
     async fn get_node_layers(&self, hash: &str) -> Result<Option<Vec<String>>> {
