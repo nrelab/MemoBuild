@@ -104,9 +104,9 @@ Config: `MEMOBUILD_REDIS_URL=redis://localhost:6379`.
 * GC respects replication factor: only delete artifact from object storage when confirmed absent from all nodes.
 * Expose GC status via `GET /gc/status`.
 ***
-## Phase 3 — Full Observability Stack (v0.6.0) — 3 weeks
+## Phase 3 — Full Observability Stack (v0.6.0) — 3 weeks [DONE]
 **Goal:** Every production metric, trace, and alert is defined in code alongside the source.
-### 3.1 Prometheus Metrics Endpoint
+### 3.1 Prometheus Metrics Endpoint [DONE]
 Add `prometheus` + `prometheus-client` crates.
 `src/metrics.rs`: global `MetricsRegistry` with labeled counters/histograms:
 * `memobuild_cache_hits_total{tier,node_id}`
@@ -117,7 +117,7 @@ Add `prometheus` + `prometheus-client` crates.
 * `memobuild_artifact_size_bytes` histogram
 * `memobuild_gc_deleted_total` counter
 Axum route `GET /metrics` → Prometheus text format (no auth, restricted to cluster-internal NetworkPolicy).
-### 3.2 OpenTelemetry Distributed Tracing
+### 3.2 OpenTelemetry Distributed Tracing [DONE]
 Add `opentelemetry`, `opentelemetry-otlp`, `tracing-opentelemetry` crates.
 Instrumentation points:
 * `span!("build.dag.execute")` wrapping entire DAG run, child spans per node.
@@ -126,7 +126,7 @@ Instrumentation points:
 * `span!("oci.push")` with registry URL and layer count.
 Trace context propagated via `traceparent` HTTP header in all inter-node calls.
 Exporter: OTLP to Jaeger / Grafana Tempo (`OTEL_EXPORTER_OTLP_ENDPOINT`).
-### 3.3 Grafana Dashboards as Code
+### 3.3 Grafana Dashboards as Code [DONE]
 `deploy/grafana/dashboards/memobuild-cluster.json` — provisioned via `grafana/provisioning/`:
 * Cache hit/miss rate by tier and node.
 * Build throughput and P99 latency time series.
@@ -140,9 +140,9 @@ Exporter: OTLP to Jaeger / Grafana Tempo (`OTEL_EXPORTER_OTLP_ENDPOINT`).
 * `DiskUsageHigh`: cache partition > 85% → warning.
 * `ErrorRateHigh`: HTTP 5xx > 5% rate over 5 min → critical.
 ***
-## Phase 4 — Kubernetes-Native Operator (v0.7.0) — 5 weeks
+## Phase 4 — Kubernetes-Native Operator (v0.7.0) — 5 weeks [DONE]
 **Goal:** MemoBuild cluster lifecycle managed by a K8s operator, eliminating manual YAML.
-### 4.1 Custom Resource Definitions
+### 4.1 Custom Resource Definitions [DONE]
 `deploy/k8s/crds/memobuildcluster.yaml`:
 ```yaml
 apiVersion: apiextensions.k8s.io/v1
@@ -162,14 +162,14 @@ spec:
     kind: MemoBuildCluster
 ```
 Spec fields: `replicas`, `storageBackend` (s3/gcs/local), `tlsSecretRef`, `postgresRef`, `redisRef`, `scalingPolicy`.
-### 4.2 Operator Implementation
+### 4.2 Operator Implementation [DONE]
 `src/operator/` module using `kube-rs` controller-runtime:
 * Reconcile loop: desired state (CRD) → actual state (StatefulSet + Service + ConfigMap + Secret).
 * Manages `StatefulSet` for cluster nodes with stable DNS (`node-{n}.memobuild.{ns}.svc`).
 * Patches HPA based on `scalingPolicy` in CRD.
 * Emits K8s Events on scale-up/down, node failures, GC runs.
 * Leader election via `kube::runtime::LeaderElection` — operator itself is HA.
-### 4.3 Production K8s Manifests
+### 4.3 Production K8s Manifests [DONE]
 `deploy/k8s/` directory:
 * `statefulset.yaml`: `podManagementPolicy: Parallel`, `updateStrategy: RollingUpdate`, `maxUnavailable: 1`.
 * `pdb.yaml`: `PodDisruptionBudget` — `minAvailable: 2` for ≥3 replica deployments.
@@ -177,7 +177,7 @@ Spec fields: `replicas`, `storageBackend` (s3/gcs/local), `tlsSecretRef`, `postg
 * `networkpolicy.yaml`: ingress only from `memobuild` namespace + designated CI runner namespace; egress only to PostgreSQL, Redis, object storage.
 * `priorityclass.yaml`: `PriorityClass` `memobuild-cluster` value `1000000` — prevents eviction under node pressure.
 * `podsecuritypolicy.yaml` / `podsecurityadmission` labels: `restricted` profile.
-### 4.4 Helm Chart
+### 4.4 Helm Chart [DONE]
 `charts/memobuild/` with full `values.yaml`:
 * `image.repository`, `image.tag`, `image.pullPolicy`.
 * `cluster.replicas`, `cluster.replicationFactor`.
@@ -192,30 +192,34 @@ Spec fields: `replicas`, `storageBackend` (s3/gcs/local), `tlsSecretRef`, `postg
 ## Phase 5 — Supply Chain Security & SLSA Compliance (v0.8.0) — 4 weeks
 **Goal:** Every build artifact is signed, attested, and auditable. SLSA Level 3 achieved.
 ### 5.1 SLSA Provenance Generation
-`src/slsa.rs`: `ProvenanceGenerator` producing SLSA `BuildDefinition` + `RunDetails` per build.
-* Captures: source URI + digest, builder ID (node ID + container image digest), build invocation parameters, environment variables (sanitized).
+`src/slsa.rs`: `ProvenanceGenerator` now produces SLSA `BuildDefinition` + `RunDetails` and emits in-toto attestation JSON.
+* Captures: source URI + digest, builder ID, build invocation metadata, environment variables, inputs.
 * Format: `in-toto` attestation bundle (JSON envelope, DSSE signature).
-* Stored as OCI referrer attached to built image manifest.
-CLI flag: `memobuild build --provenance` (default on in production mode).
+* Written to `attestation.json` for every build artifact.
+* CLI support added via `memobuild attest`.
+
 ### 5.2 Cosign Artifact Signing
 Add `cosign` binary integration (or `sigstore` Rust crate when stable).
 * Keyless signing flow: OIDC token from K8s ServiceAccount → Fulcio CA → Rekor transparency log entry.
 * Signing on every `memobuild build --push` call.
-* Verification: `src/verify.rs` — `memobuild verify <image>` command checks Rekor log + Cosign bundle.
+* Verification: `src/verify.rs` — `memobuild verify <image>` command checks signature policy and reports verification state.
 * Policy: configurable whether unsigned images can be pulled from remote cache (`MEMOBUILD_REQUIRE_SIGNED=true`).
+* Current status: CLI and verification stubbed; full Rekor/Fulcio integration remains TODO.
+
 ### 5.3 SBOM Generation
 `src/sbom.rs`: generates CycloneDX 1.5 SBOM for built OCI images.
-* Lists all `COPY`-ed files with their content hashes.
-* References resolved package manager lockfiles (package-lock.json, Cargo.lock, go.sum).
-* Attached to image as OCI referrer.
-CLI: `memobuild sbom <image>` — outputs CycloneDX JSON to stdout.
+* Lists all `COPY`-ed files with content hashes and resolved dependencies from `Cargo.lock` / `package-lock.json`.
+* Generates `sbom.json` alongside every exported image.
+* CLI: `memobuild sbom <image>` outputs CycloneDX JSON.
+* OCI referrer attachment remains TODO.
+
 ### 5.4 Sigstore Policy Controller
 `deploy/k8s/policy/sigstore-policy.yaml`: ClusterImagePolicy (Sigstore Policy Controller) enforcing that any image built by MemoBuild has a valid Rekor entry before admission into the cluster.
+
 ### 5.5 Audit Trail
 `src/audit.rs`: immutable append-only audit log.
-* Every cache read/write, node join/leave, GC run, scaling event written as structured NDJSON.
-* Stored in PostgreSQL `audit_log` table with row-level SHA256 chain hash (each row hashes previous row's hash — tamper-evident).
-* Export: `memobuild audit export --since <date>` → NDJSON or CSV.
+* Build lifecycle events are now recorded for `build.started` and `build.completed`.
+* Cache and cluster event persistence, PostgreSQL-backed audit storage, and export CLI remain TODO.
 ***
 ## Phase 6 — gRPC Build Protocol & Remote Execution API (v0.9.0) — 5 weeks
 **Goal:** Replace HTTP/JSON execution protocol with gRPC streaming. Achieve compatibility with Bazel RE API.
