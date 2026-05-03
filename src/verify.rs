@@ -28,7 +28,7 @@ impl CosignVerifier {
         }
     }
 
-    pub async fn verify_image(&self, image: &str) -> Result<VerificationResult> {
+    pub async fn verify_image(&self, _image: &str) -> Result<VerificationResult> {
         // In production, this would:
         // 1. Fetch the image manifest from the registry
         // 2. Look for cosign signature annotations or referrers
@@ -53,7 +53,7 @@ impl CosignVerifier {
         }
     }
 
-    pub async fn verify_signature(&self, payload: &str, signature: &str) -> Result<bool> {
+    pub async fn verify_signature(&self, _payload: &str, _signature: &str) -> Result<bool> {
         // Verify the Cosign signature
         // In production, this would:
         // 1. Extract the public key from the certificate
@@ -63,7 +63,7 @@ impl CosignVerifier {
         Ok(!self.require_signed)
     }
 
-    pub async fn check_rekor(&self, digest: &str) -> Result<Option<RekorEntry>> {
+    pub async fn check_rekor(&self, _digest: &str) -> Result<Option<RekorEntry>> {
         // Check Rekor transparency log for the artifact
         // In production, this would call the Rekor API
         
@@ -112,7 +112,7 @@ impl Default for VerificationPolicy {
 }
 
 /// Keyless verification using OIDC token
-pub async fn verify_keyless(image: &str, oidc_token: &str) -> Result<VerificationResult> {
+pub async fn verify_keyless(_image: &str, _oidc_token: &str) -> Result<VerificationResult> {
     // In production, this would:
     // 1. Use the OIDC token to get a certificate from Fulcio
     // 2. Use the certificate to verify the signature
@@ -129,20 +129,24 @@ pub async fn verify_keyless(image: &str, oidc_token: &str) -> Result<Verificatio
 pub mod cli {
     use super::*;
 
-    pub fn verify_cmd(image: &str, policy: &VerificationPolicy) -> Result<()> {
+    pub async fn verify_cmd(image: &str, policy: &VerificationPolicy) -> Result<()> {
         let verifier = CosignVerifier::new("");
-        
-        // This would run in a real async context
-        let _ = verifier.verify_image(image)?;
-        
+        let result = verifier.verify_image(image).await?;
+
         println!("Verifying image: {}", image);
-        
-        if policy.require签名 {
+        println!("Verified: {}", result.verified);
+        println!("Message: {}", result.message);
+
+        if policy.require_signed {
             println!("Policy: Signature required");
         } else {
             println!("Policy: Signature optional");
         }
-        
+
+        if policy.include_rekor {
+            println!("Rekor verification is enabled");
+        }
+
         Ok(())
     }
 }

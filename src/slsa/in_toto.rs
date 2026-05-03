@@ -2,6 +2,7 @@
 
 use crate::slsa::Signature;
 use anyhow::Result;
+use serde_json::json;
 
 /// Sign payload using DSSE (Dead Simple Signed Envelopes)
 pub fn sign_dsse(payload: &str) -> Result<Signature> {
@@ -28,7 +29,7 @@ pub fn sign_dsse(payload: &str) -> Result<Signature> {
 }
 
 /// Verify DSSE signature
-pub fn verify_dsse(payload: &str, signature: &Signature) -> Result<bool> {
+pub fn verify_dsse(_payload: &str, signature: &Signature) -> Result<bool> {
     // In production, this would verify against the public key
     // For now, just check signature format
     Ok(signature.sig.len() == 64)

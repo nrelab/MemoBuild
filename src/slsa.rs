@@ -6,7 +6,9 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json;
+use std::fs;
+use std::path::Path;
 
 pub mod in_toto;
 
@@ -78,6 +80,82 @@ impl ProvenanceGenerator {
             payload,
             signatures: vec![signature],
         })
+    }
+
+    pub fn generate_signed_provenance(
+        &self,
+        source_uri: &str,
+        source_digest: &str,
+        artifact_uri: &str,
+        artifact_digest: &str,
+        invocation_params: &InvocationParams,
+    ) -> Result<Attestation> {
+        let provenance = self.generate_provenance(
+            source_uri,
+            source_digest,
+            artifact_uri,
+            artifact_digest,
+            invocation_params,
+        )?;
+        self.sign(&provenance)
+    }
+
+    pub fn provenance_to_json(&self, provenance: &Provenance) -> Result<String> {
+        serde_json::to_string_pretty(provenance)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize provenance: {}", e))
+    }
+
+    pub fn attestation_to_json(&self, attestation: &Attestation) -> Result<String> {
+        serde_json::to_string_pretty(attestation)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize attestation: {}", e))
+    }
+
+    pub fn save_attestation(&self, attestation: &Attestation, path: &Path) -> Result<()> {
+        let json = self.attestation_to_json(attestation)?;
+        fs::write(path, json)?;
+        Ok(())
+    }
+
+    pub fn verify_attestation(&self, attestation: &Attestation) -> Result<bool> {
+        let payload = &attestation.payload;
+        if let Some(signature) = attestation.signatures.first() {
+            in_toto::verify_dsse(payload, signature)
+        } else {
+            Ok(false)
+        }
+    }
+}
+
+pub mod cli {
+    use super::*;
+    use std::path::Path;
+
+    pub fn generate_cmd(
+        source_uri: &str,
+        source_digest: &str,
+        artifact_uri: &str,
+        artifact_digest: &str,
+        output: &Path,
+        builder_id: &str,
+    ) -> Result<()> {
+        let generator = ProvenanceGenerator::new(builder_id.to_string());
+        let invocation = InvocationParams::default();
+        let provenance = generator.generate_provenance(
+            source_uri,
+            source_digest,
+            artifact_uri,
+            artifact_digest,
+            &invocation,
+        )?;
+        let attestation = generator.sign(&provenance)?;
+        generator.save_attestation(&attestation, output)?;
+        println!("SLSA attestation written to {}", output.display());
+        Ok(())
+    }
+
+    pub fn verify_cmd(attestation: &Attestation) -> Result<bool> {
+        let generator = ProvenanceGenerator::new("memobuild-builder".to_string());
+        generator.verify_attestation(attestation)
     }
 }
 
