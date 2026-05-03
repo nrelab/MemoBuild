@@ -121,13 +121,13 @@ message ActionResult {
   StdoutFile stdout = 3;
   StderrFile stderr = 4;
   ExecutionInfo execution_info = 5;
-  message_cache_info = 6;
+  MessageCacheInfo message_cache_info = 6;
 }
 
 message ExecutionInfo {
   int64 input_fetch_completed_timestamp = 1;
   int64 execution_completed_timestamp = 2;
-  bool execution_worker = 3;
+  string execution_worker = 3;
 }
 
 message MessageCacheInfo {
