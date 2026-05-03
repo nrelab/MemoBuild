@@ -35,3 +35,7 @@ pub mod secrets;
 pub mod server;
 pub mod storage;
 pub mod tls;
+pub mod slsa;
+pub mod sbom;
+pub mod verify;
+pub mod audit;

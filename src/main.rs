@@ -1,12 +1,15 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use memobuild::server;
-use memobuild::{cache, docker, executor, export, logging, core};
+use memobuild::{audit, cache, core, docker, executor, export, logging, sbom, slsa, verify};
+use hex::encode as hex_encode;
+use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio_postgres::NoTls;
+use uuid::Uuid;
 
 #[derive(Parser)]
 #[command(name = "memobuild")]
@@ -114,6 +117,56 @@ enum Commands {
         /// Full image name (e.g. registry.io/repo:tag)
         image: String,
     },
+    /// Generate an SBOM for a build context
+    Sbom {
+        /// Image name to annotate in the SBOM
+        image: String,
+
+        /// Path to the build context
+        #[arg(default_value = ".")]
+        context: PathBuf,
+
+        /// Dockerfile path within the context
+        #[arg(short, long, default_value = "Dockerfile")]
+        file: String,
+
+        /// Output path for the SBOM
+        #[arg(short, long, default_value = "sbom.json")]
+        output: String,
+
+        /// Output format (json|xml)
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
+    /// Verify a container image with Cosign policy
+    Verify {
+        /// Full image name (e.g. registry.io/repo:tag)
+        image: String,
+
+        /// Require a valid signature
+        #[arg(long)]
+        require_signed: bool,
+
+        /// Include Rekor transparency log validation
+        #[arg(long, default_value_t = true)]
+        include_rekor: bool,
+
+        /// OIDC token for keyless verification
+        #[arg(long)]
+        oidc_token: Option<String>,
+    },
+    /// Generate a SLSA provenance attestation for an artifact
+    Attest {
+        /// Source URI for provenance materials
+        source_uri: String,
+
+        /// Artifact URI for the produced artifact
+        artifact_uri: String,
+
+        /// Output path for the attestation
+        #[arg(short, long, default_value = "attestation.json")]
+        output: String,
+    },
     /// Generate CI/CD configurations
     GenerateCi {
         /// CI provider (github, gitlab)
@@ -150,6 +203,9 @@ async fn main() -> Result<()> {
 
     // Initialize structured logging
     logging::init_logging(cli.json_logs).ok();
+
+    // Initialize OpenTelemetry tracing if configured
+    memobuild::tracing::init_tracing();
 
     match cli.command {
         Commands::Build {
@@ -224,6 +280,24 @@ async fn main() -> Result<()> {
         } => start_worker(port, sandbox, scheduler_url).await,
         Commands::Pull { image } => run_pull(image).await,
         Commands::GenerateCi { provider } => run_generate_ci(provider).await,
+        Commands::Sbom {
+            image,
+            context,
+            file,
+            output,
+            format,
+        } => run_sbom(image, context, file, output, format).await,
+        Commands::Verify {
+            image,
+            require_signed,
+            include_rekor,
+            oidc_token,
+        } => run_verify(image, require_signed, include_rekor, oidc_token).await,
+        Commands::Attest {
+            source_uri,
+            artifact_uri,
+            output,
+        } => run_attest(&source_uri, &artifact_uri, &output).await,
         Commands::Cluster {
             port,
             node_id,
@@ -244,6 +318,10 @@ async fn run_build(
     remote_exec: bool,
 ) -> Result<()> {
     println!("🚀 MemoBuild Engine Starting...");
+
+    let build_id = Uuid::new_v4().to_string();
+    let audit_logger = audit::AuditLogger::new();
+    audit::log_build_event(&audit_logger, &build_id, "started");
 
     let env_fp = memobuild::env::EnvFingerprint::collect();
     println!("   🔑 Env Fingerprint: {}", &env_fp.hash()[..8]);
@@ -352,6 +430,33 @@ async fn run_build(
     println!("📦 Exporting OCI Image...");
     let output_dir = export::export_image(&graph, "memobuild-demo:latest", reproducible)?;
 
+    let image_digest = compute_image_digest(&output_dir)?;
+    let sbom_generator = sbom::SbomGenerator::new(Some("NRELabs".to_string()));
+    let sbom_path = output_dir.join("sbom.json");
+    let sbom = sbom_generator.generate_from_context(
+        "memobuild-demo:latest",
+        &image_digest,
+        &context_dir,
+        &PathBuf::from(&dockerfile_path),
+    )?;
+    sbom_generator.save_sbom(&sbom, &sbom_path, &sbom::OutputFormat::Json)?;
+    println!("🔐 SBOM written to {}", sbom_path.display());
+
+    let provenance_generator = slsa::ProvenanceGenerator::new("memobuild-builder".to_string());
+    let provenance = provenance_generator.generate_provenance(
+        &format!("git+file://{}", context_dir.display()),
+        &image_digest,
+        "oci://memobuild-demo:latest",
+        &image_digest,
+        &slsa::InvocationParams::default(),
+    )?;
+    let attestation = provenance_generator.sign(&provenance)?;
+    let attestation_path = output_dir.join("attestation.json");
+    provenance_generator.save_attestation(&attestation, &attestation_path)?;
+    println!("🔐 SLSA attestation written to {}", attestation_path.display());
+
+    audit::log_build_event(&audit_logger, &build_id, "completed");
+
     if push {
         let registry_url =
             env::var("MEMOBUILD_REGISTRY").unwrap_or_else(|_| "localhost:5000".to_string());
@@ -366,6 +471,66 @@ async fn run_build(
 
     println!("✅ Build and Export completed successfully");
     Ok(())
+}
+
+async fn run_sbom(
+    image: String,
+    context_dir: PathBuf,
+    dockerfile_path: String,
+    output: String,
+    format: String,
+) -> Result<()> {
+    let output_path = PathBuf::from(&output);
+    let dockerfile = context_dir.join(&dockerfile_path);
+    sbom::cli::generate_cmd(&image, &context_dir, &dockerfile, &output, &format)?;
+    println!("✅ SBOM generation complete: {}", output_path.display());
+    Ok(())
+}
+
+async fn run_verify(
+    image: String,
+    require_signed: bool,
+    include_rekor: bool,
+    oidc_token: Option<String>,
+) -> Result<()> {
+    let policy = verify::VerificationPolicy {
+        require_signed,
+        include_rekor,
+        certificate_identity: oidc_token.clone(),
+        certificate_oidc_issuer: std::env::var("MEMOBUILD_OIDC_ISSUER").ok(),
+    };
+
+    verify::cli::verify_cmd(&image, &policy).await?;
+
+    if let Some(ref token) = oidc_token {
+        let verification = verify::verify_keyless(&image, token).await?;
+        println!("Keyless verification: {}", verification.message);
+    }
+
+    Ok(())
+}
+
+async fn run_attest(source_uri: &str, artifact_uri: &str, output: &str) -> Result<()> {
+    let generator = slsa::ProvenanceGenerator::new("memobuild-builder".to_string());
+    let provenance = generator.generate_provenance(
+        source_uri,
+        "sha256:unknown",
+        artifact_uri,
+        "sha256:unknown",
+        &slsa::InvocationParams::default(),
+    )?;
+    let attestation = generator.sign(&provenance)?;
+    generator.save_attestation(&attestation, Path::new(output))?;
+    println!("✅ SLSA attestation written to {}", output);
+    Ok(())
+}
+
+fn compute_image_digest(output_dir: &Path) -> Result<String> {
+    let index_file = output_dir.join("index.json");
+    let index_contents = fs::read_to_string(&index_file)
+        .with_context(|| format!("Failed to read OCI index from {}", index_file.display()))?;
+    let digest = Sha256::digest(index_contents.as_bytes());
+    Ok(format!("sha256:{}", hex_encode(digest)))
 }
 
 async fn run_graph(context_dir: PathBuf, dockerfile_path: String) -> Result<()> {
@@ -628,9 +793,11 @@ async fn start_cluster_server(
         "http://localhost:{}",
         port
     )));
+    let metrics = memobuild::metrics::metrics_registry();
     let distributed_cache = Arc::new(memobuild::cache_cluster::DistributedCache::new(
         cluster.clone(),
         local_cache,
+        metrics,
     ));
 
     // Initialize auto-scaler

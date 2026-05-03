@@ -32,6 +32,7 @@ pub struct AppState {
     pub tx_events: broadcast::Sender<crate::dashboard::BuildEvent>,
     pub current_dag: Arc<std::sync::Mutex<Option<crate::graph::BuildGraph>>>,
     pub auth_state: Arc<crate::auth::AuthState>,
+    pub metrics: crate::metrics::SharedMetrics,
 }
 
 #[derive(Deserialize)]
@@ -74,6 +75,7 @@ pub async fn start_server(
     let current_dag = Arc::new(std::sync::Mutex::new(None));
 
     let auth_state = Arc::new(crate::auth::AuthState::new(admin_token, auth_db_client));
+    let metrics = crate::metrics::metrics_registry();
 
     let state = Arc::new(AppState {
         metadata,
@@ -82,6 +84,7 @@ pub async fn start_server(
         tx_events,
         current_dag,
         auth_state,
+        metrics,
     });
 
     let app = Router::new()
@@ -603,9 +606,8 @@ async fn gc_status() -> impl IntoResponse {
     (StatusCode::OK, Json(status)).into_response()
 }
 
-async fn metrics_handler() -> impl IntoResponse {
-    let registry = crate::metrics::metrics_registry();
-    let metrics = registry.read().await;
+async fn metrics_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let metrics = state.metrics.read().await;
     let output = metrics.encode();
     (
         StatusCode::OK,
