@@ -98,6 +98,12 @@ enum Commands {
         #[arg(short, long, default_value_t = 9000)]
         port: u16,
     },
+    /// Start the Remote Execution gRPC server
+    Grpc {
+        /// Port to listen on
+        #[arg(short, long, default_value_t = 9500)]
+        port: u16,
+    },
     /// Start a Worker Node
     Worker {
         /// Port to listen on
@@ -273,6 +279,7 @@ async fn main() -> Result<()> {
             server::start_server(port, data_dir, webhook_url, tls_config, admin_token, auth_db_client).await
         }
         Commands::Scheduler { port } => start_scheduler(port).await,
+        Commands::Grpc { port } => start_reapi_server(port).await,
         Commands::Worker {
             port,
             sandbox,
@@ -674,6 +681,26 @@ async fn start_scheduler(_port: u16) -> Result<()> {
         let server = ExecutionServer::new(scheduler);
 
         server.start(_port).await
+    }
+    #[cfg(not(feature = "remote-exec"))]
+    anyhow::bail!("Remote Execution feature not enabled. Build with --features remote-exec")
+}
+
+async fn start_reapi_server(_port: u16) -> Result<()> {
+    #[cfg(feature = "remote-exec")]
+    {
+        use memobuild::remote_exec::scheduler::SchedulingStrategy;
+        use memobuild::remote_exec::{grpc_server, scheduler::Scheduler};
+
+        println!(
+            "🚀 Starting MemoBuild REAPI gRPC server on port {}...",
+            _port
+        );
+
+        let cache = Arc::new(create_cache().await?);
+        let scheduler = Arc::new(Scheduler::new(SchedulingStrategy::RoundRobin));
+
+        grpc_server::start_grpc_server(_port, scheduler, cache).await
     }
     #[cfg(not(feature = "remote-exec"))]
     anyhow::bail!("Remote Execution feature not enabled. Build with --features remote-exec")
