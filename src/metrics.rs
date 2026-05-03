@@ -3,117 +3,165 @@
 //! This module provides global metrics collection for monitoring cache hits,
 //! build performance, cluster health, and garbage collection operations.
 
+use prometheus_client::encoding::text::encode;
+use prometheus_client::encoding::EncodeLabelSet;
+use prometheus_client::metrics::counter::Counter;
+use prometheus_client::metrics::family::Family;
+use prometheus_client::metrics::gauge::Gauge;
+use prometheus_client::metrics::histogram::Histogram;
+use prometheus_client::registry::Registry;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use tokio::sync::RwLock;
 
-/// Global metrics registry (simplified implementation)
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+struct CacheLabels {
+    tier: String,
+    node_id: String,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+struct BuildLabels {
+    status: String,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+struct ClusterLabels {
+    region: String,
+    status: String,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+struct ReplicationLabels {
+    node_id: String,
+}
+
+/// Global metrics registry using prometheus-client
 pub struct MetricsRegistry {
-    cache_hits: u64,
-    cache_misses: u64,
-    cluster_nodes: i64,
-    replication_lag: f64,
-    gc_deleted: u64,
-    active_builds: i64,
-    error_count: u64,
+    registry: Registry,
+    cache_hits: Family<CacheLabels, Counter>,
+    cache_misses: Family<CacheLabels, Counter>,
+    build_duration: Family<BuildLabels, Histogram>,
+    cluster_nodes: Family<ClusterLabels, Gauge>,
+    replication_lag: Family<ReplicationLabels, Gauge<f64, AtomicU64>>,
+    artifact_size: Histogram,
+    gc_deleted: Counter,
 }
 
 impl MetricsRegistry {
     pub fn new() -> Self {
+        let mut registry = Registry::default();
+
+        let cache_hits = Family::<CacheLabels, Counter>::default();
+        registry.register(
+            "memobuild_cache_hits_total",
+            "Total cache hits",
+            cache_hits.clone(),
+        );
+
+        let cache_misses = Family::<CacheLabels, Counter>::default();
+        registry.register(
+            "memobuild_cache_misses_total",
+            "Total cache misses",
+            cache_misses.clone(),
+        );
+
+        let build_duration = Family::<BuildLabels, Histogram>::new_with_constructor(|| {
+            Histogram::new(vec![0.1, 0.5, 1.0, 5.0, 30.0, 60.0, 300.0].into_iter())
+        });
+        registry.register(
+            "memobuild_build_duration_seconds",
+            "Build duration in seconds",
+            build_duration.clone(),
+        );
+
+        let cluster_nodes = Family::<ClusterLabels, Gauge>::default();
+        registry.register(
+            "memobuild_cluster_nodes_total",
+            "Number of cluster nodes",
+            cluster_nodes.clone(),
+        );
+
+        let replication_lag = Family::<ReplicationLabels, Gauge<f64, AtomicU64>>::default();
+        registry.register(
+            "memobuild_replication_lag_seconds",
+            "Replication lag in seconds",
+            replication_lag.clone(),
+        );
+
+        let artifact_size = Histogram::new(
+            vec![1024.0, 10240.0, 102400.0, 1048576.0, 10485760.0, 104857600.0].into_iter(), // 1KB, 10KB, 100KB, 1MB, 10MB, 100MB
+        );
+        registry.register(
+            "memobuild_artifact_size_bytes",
+            "Artifact size in bytes",
+            artifact_size.clone(),
+        );
+
+        let gc_deleted = Counter::default();
+        registry.register(
+            "memobuild_gc_deleted_total",
+            "Total artifacts deleted by GC",
+            gc_deleted.clone(),
+        );
+
         Self {
-            cache_hits: 0,
-            cache_misses: 0,
-            cluster_nodes: 0,
-            replication_lag: 0.0,
-            gc_deleted: 0,
-            active_builds: 0,
-            error_count: 0,
+            registry,
+            cache_hits,
+            cache_misses,
+            build_duration,
+            cluster_nodes,
+            replication_lag,
+            artifact_size,
+            gc_deleted,
         }
     }
 
-    #[allow(dead_code)]
-    pub fn inc_cache_hits(&mut self) {
-        self.cache_hits += 1;
+    pub fn inc_cache_hits(&self, tier: &str, node_id: &str) {
+        self.cache_hits.get_or_create(&CacheLabels {
+            tier: tier.to_string(),
+            node_id: node_id.to_string(),
+        }).inc();
     }
 
-    #[allow(dead_code)]
-    pub fn inc_cache_misses(&mut self) {
-        self.cache_misses += 1;
+    pub fn inc_cache_misses(&self, tier: &str, node_id: &str) {
+        self.cache_misses.get_or_create(&CacheLabels {
+            tier: tier.to_string(),
+            node_id: node_id.to_string(),
+        }).inc();
     }
 
-    #[allow(dead_code)]
-    pub fn set_cluster_nodes(&mut self, count: u64) {
-        self.cluster_nodes = count as i64;
+    pub fn observe_build_duration(&self, duration_secs: f64, status: &str) {
+        self.build_duration.get_or_create(&BuildLabels {
+            status: status.to_string(),
+        }).observe(duration_secs);
     }
 
-    #[allow(dead_code)]
-    pub fn set_replication_lag(&mut self, lag_secs: f64) {
-        self.replication_lag = lag_secs;
+    pub fn set_cluster_nodes(&self, region: &str, status: &str, count: i64) {
+        self.cluster_nodes.get_or_create(&ClusterLabels {
+            region: region.to_string(),
+            status: status.to_string(),
+        }).set(count);
     }
 
-    #[allow(dead_code)]
-    pub fn inc_gc_deleted(&mut self) {
-        self.gc_deleted += 1;
+    pub fn set_replication_lag(&self, node_id: &str, lag_secs: f64) {
+        self.replication_lag.get_or_create(&ReplicationLabels {
+            node_id: node_id.to_string(),
+        }).set(lag_secs);
     }
 
-    #[allow(dead_code)]
-    pub fn set_active_builds(&mut self, count: i64) {
-        self.active_builds = count;
+    pub fn observe_artifact_size(&self, size_bytes: f64) {
+        self.artifact_size.observe(size_bytes);
     }
 
-    #[allow(dead_code)]
-    pub fn inc_errors(&mut self) {
-        self.error_count += 1;
+    pub fn inc_gc_deleted(&self) {
+        self.gc_deleted.inc();
     }
 
     pub fn encode(&self) -> String {
-        let mut output = String::new();
-        output.push_str("# HELP memobuild_cache_hits_total Total cache hits\n");
-        output.push_str("# TYPE memobuild_cache_hits_total counter\n");
-        output.push_str(&format!(
-            "memobuild_cache_hits_total {}\n\n",
-            self.cache_hits
-        ));
-
-        output.push_str("# HELP memobuild_cache_misses_total Total cache misses\n");
-        output.push_str("# TYPE memobuild_cache_misses_total counter\n");
-        output.push_str(&format!(
-            "memobuild_cache_misses_total {}\n\n",
-            self.cache_misses
-        ));
-
-        output.push_str("# HELP memobuild_cluster_nodes_total Number of cluster nodes\n");
-        output.push_str("# TYPE memobuild_cluster_nodes_total gauge\n");
-        output.push_str(&format!(
-            "memobuild_cluster_nodes_total {}\n\n",
-            self.cluster_nodes
-        ));
-
-        output.push_str("# HELP memobuild_replication_lag_seconds Replication lag in seconds\n");
-        output.push_str("# TYPE memobuild_replication_lag_seconds gauge\n");
-        output.push_str(&format!(
-            "memobuild_replication_lag_seconds {}\n\n",
-            self.replication_lag
-        ));
-
-        output.push_str("# HELP memobuild_gc_deleted_total Total artifacts deleted by GC\n");
-        output.push_str("# TYPE memobuild_gc_deleted_total counter\n");
-        output.push_str(&format!(
-            "memobuild_gc_deleted_total {}\n\n",
-            self.gc_deleted
-        ));
-
-        output.push_str("# HELP memobuild_active_builds Number of active builds\n");
-        output.push_str("# TYPE memobuild_active_builds gauge\n");
-        output.push_str(&format!(
-            "memobuild_active_builds {}\n\n",
-            self.active_builds
-        ));
-
-        output.push_str("# HELP memobuild_errors_total Total errors\n");
-        output.push_str("# TYPE memobuild_errors_total counter\n");
-        output.push_str(&format!("memobuild_errors_total {}\n", self.error_count));
-
-        output
+        let mut buffer = String::new();
+        encode(&mut buffer, &self.registry).unwrap();
+        buffer
     }
 }
 
