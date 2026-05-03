@@ -72,6 +72,8 @@ impl IncrementalExecutor {
 
     /// Execute the build graph with parallel and incremental capabilities
     pub async fn execute(&mut self, graph: &mut BuildGraph) -> Result<ExecutionStats> {
+        let _span = crate::build_span!("dag.execute");
+
         let start_time = Instant::now();
 
         // Reset stats

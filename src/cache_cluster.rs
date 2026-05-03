@@ -177,6 +177,11 @@ impl CacheCluster {
         Ok(())
     }
 
+    /// Get local node ID
+    pub fn local_node_id(&self) -> String {
+        self._local_node.id.clone()
+    }
+
     /// Get cluster status
     pub async fn get_cluster_status(&self) -> Result<ClusterStatus> {
         let nodes = self.nodes.read().await;
@@ -205,14 +210,16 @@ pub struct DistributedCache {
     cluster: Arc<CacheCluster>,
     local_cache: Arc<dyn RemoteCache>,
     remote_clients: Arc<RwLock<HashMap<String, Arc<dyn RemoteCache>>>>,
+    metrics: crate::metrics::SharedMetrics,
 }
 
 impl DistributedCache {
-    pub fn new(cluster: Arc<CacheCluster>, local_cache: Arc<dyn RemoteCache>) -> Self {
+    pub fn new(cluster: Arc<CacheCluster>, local_cache: Arc<dyn RemoteCache>, metrics: crate::metrics::SharedMetrics) -> Self {
         Self {
             cluster,
             local_cache,
             remote_clients: Arc::new(RwLock::new(HashMap::new())),
+            metrics,
         }
     }
 
@@ -232,8 +239,11 @@ impl DistributedCache {
 #[async_trait]
 impl RemoteCache for DistributedCache {
     async fn has(&self, hash: &str) -> Result<bool> {
+        let _span = crate::cache_span!("has", "distributed");
+
         // Check local first
         if self.local_cache.has(hash).await? {
+            self.metrics.read().await.inc_cache_hits("local", &self.cluster.local_node_id());
             return Ok(true);
         }
 
@@ -241,6 +251,7 @@ impl RemoteCache for DistributedCache {
         if let Some(primary_node) = self.cluster.get_primary_node(hash).await? {
             if let Some(client) = self.get_remote_client(&primary_node).await {
                 if client.has(hash).await? {
+                    self.metrics.read().await.inc_cache_hits("remote", &primary_node);
                     return Ok(true);
                 }
             }
@@ -251,17 +262,20 @@ impl RemoteCache for DistributedCache {
         for replica_node in replicas {
             if let Some(client) = self.get_remote_client(&replica_node).await {
                 if client.has(hash).await? {
+                    self.metrics.read().await.inc_cache_hits("remote", &replica_node);
                     return Ok(true);
                 }
             }
         }
 
+        self.metrics.read().await.inc_cache_misses("distributed", &self.cluster.local_node_id());
         Ok(false)
     }
 
     async fn get(&self, hash: &str) -> Result<Option<Vec<u8>>> {
         // Try local first
         if let Some(data) = self.local_cache.get(hash).await? {
+            self.metrics.read().await.inc_cache_hits("local", &self.cluster.local_node_id());
             return Ok(Some(data));
         }
 
@@ -271,6 +285,7 @@ impl RemoteCache for DistributedCache {
                 if let Some(data) = client.get(hash).await? {
                     // Cache locally for future requests
                     self.local_cache.put(hash, &data).await?;
+                    self.metrics.read().await.inc_cache_hits("remote", &primary_node);
                     return Ok(Some(data));
                 }
             }
@@ -288,15 +303,20 @@ impl RemoteCache for DistributedCache {
                             let _ = primary_client.put(hash, &data).await; // Best effort
                         }
                     }
+                    self.metrics.read().await.inc_cache_hits("remote", &replica_node);
                     return Ok(Some(data));
                 }
             }
         }
 
+        self.metrics.read().await.inc_cache_misses("distributed", &self.cluster.local_node_id());
         Ok(None)
     }
 
     async fn put(&self, hash: &str, data: &[u8]) -> Result<()> {
+        // Observe artifact size
+        self.metrics.read().await.observe_artifact_size(data.len() as f64);
+
         // Store locally first
         self.local_cache.put(hash, data).await?;
 
@@ -312,6 +332,7 @@ impl RemoteCache for DistributedCache {
                 let hash = hash.to_string();
                 let data = data.to_vec();
                 let task = tokio::spawn(async move {
+                    let _span = crate::replicate_span!(&primary);
                     let _ = client.put(&hash, &data).await;
                 });
                 replication_tasks.push(task);
@@ -324,6 +345,7 @@ impl RemoteCache for DistributedCache {
                 let hash = hash.to_string();
                 let data = data.to_vec();
                 let task = tokio::spawn(async move {
+                    let _span = crate::replicate_span!(&replica);
                     let _ = client.put(&hash, &data).await;
                 });
                 replication_tasks.push(task);
