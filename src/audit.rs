@@ -101,7 +101,7 @@ impl AuditEntry {
         hasher.update(self.actor.as_bytes());
         hasher.update(self.resource.as_bytes());
         hasher.update(self.action.as_bytes());
-        hasher.update(serde_json::to_string(&self.details)?.);
+        hasher.update(serde_json::to_string(&self.details)?.as_bytes());
         hasher.update(self.prev_hash.as_bytes());
         
         Ok(hex::encode(hasher.finalize()))
