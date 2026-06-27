@@ -143,6 +143,9 @@ impl RemoteCache for HybridCache {
             return Ok(true);
         }
         if let Some(ref remote) = self.remote {
+            if remote.get_node_layers(hash).await?.is_some() {
+                return Ok(true);
+            }
             if remote.has(hash).await? {
                 return Ok(true);
             }
