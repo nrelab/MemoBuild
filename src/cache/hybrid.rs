@@ -229,7 +229,11 @@ impl RemoteCache for HybridCache {
     }
 
     async fn report_analytics(&self, dirty: u32, cached: u32, duration_ms: u64) -> Result<()> {
-        self.report_analytics(dirty, cached, duration_ms).await
+        if let Some(ref remote) = self.remote {
+            remote.report_analytics(dirty, cached, duration_ms).await
+        } else {
+            Ok(())
+        }
     }
 }
 
