@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tonic::{Request, Response, Status};
 use chrono::Utc;
-use sha2::Digest as Sha2Digest;
+use sha2::{Digest as Sha256DigestTrait, Sha256};
 use serde_json;
 use uuid::Uuid;
 
@@ -25,16 +25,17 @@ pub mod memobuild {
 use memobuild::v1::{
     execution_service_server::ExecutionService,
     cache_service_server::CacheService,
+    execute_response, action_result,
     ExecuteRequest, ExecuteResponse, WaitExecutionRequest,
     GetExecutionStreamInfoRequest, GetExecutionStreamInfoResponse,
     GetActionResultRequest, ActionResult as ProtoActionResult,
+    ExecutionInfo,
     UpdateActionResultRequest, UpdateActionResultResponse,
     FindMissingBlobsRequest, FindMissingBlobsResponse,
     BatchReadBlobsRequest, BatchReadBlobsResponse,
     BatchUpdateBlobsRequest, BatchUpdateBlobsResponse,
     GetTreeRequest, GetTreeResponse,
-    Blob, BlobDigest, FileNode,
-    action_result, execution_info,
+    Blob, BlobDigest,
 };
 
 /// REAPI-compatible Execution Service
@@ -86,6 +87,7 @@ impl ReapiExecutionService {
 #[tonic::async_trait]
 impl ExecutionService for ReapiExecutionService {
     type ExecuteStream = tokio_stream::wrappers::ReceiverStream<Result<ExecuteResponse, Status>>;
+    type WaitExecutionStream = tokio_stream::wrappers::ReceiverStream<Result<ExecuteResponse, Status>>;
 
     async fn execute(
         &self,
@@ -146,7 +148,7 @@ impl ExecutionService for ReapiExecutionService {
                     execute_response::ExecutionMetadata {
                         worker: "worker-1".to_string(),
                         queued_duration_ns: 0,
-                        worker_start_timestamp_ns: Utc::now().timestamp_nanos(),
+                        worker_start_timestamp_ns: Utc::now().timestamp_nanos_opt().unwrap_or(0),
                         worker_completed_timestamp_ns: 0,
                         input_fetch_duration_ns: 0,
                         output_upload_duration_ns: 0,
@@ -244,6 +246,12 @@ impl ReapiCacheService {
     }
 }
 
+impl ReapiCacheService {
+    fn action_result_cache_key(action_digest: &str) -> String {
+        format!("reapi-action-result/{}", action_digest)
+    }
+}
+
 #[tonic::async_trait]
 impl CacheService for ReapiCacheService {
     async fn get_action_result(
@@ -251,11 +259,14 @@ impl CacheService for ReapiCacheService {
         request: Request<GetActionResultRequest>,
     ) -> Result<Response<ProtoActionResult>, Status> {
         let action_digest = request.into_inner().action_digest;
+        let cache_key = Self::action_result_cache_key(&action_digest);
 
-        match self.get_cached_action_result(&action_digest).await {
-            Ok(Some(result)) => {
-                let stdout_digest = Sha2Digest::digest(&result.stdout_raw);
-                let stderr_digest = Sha2Digest::digest(&result.stderr_raw);
+        match self.cache.get(&cache_key).await {
+            Ok(Some(payload)) => {
+                let result: ActionResult = serde_json::from_slice(&payload)
+                    .map_err(|e| Status::internal(format!("Failed to deserialize: {}", e)))?;
+                let stdout_digest = Sha256::digest(&result.stdout_raw);
+                let stderr_digest = Sha256::digest(&result.stderr_raw);
                 let proto_result = ProtoActionResult {
                     action_digest: action_digest.clone(),
                     exit_code: result.exit_code,
@@ -267,7 +278,7 @@ impl CacheService for ReapiCacheService {
                         digest: format!("sha256:{}", hex::encode(stderr_digest)),
                         size: result.stderr_raw.len() as i64,
                     }),
-                    execution_info: Some(execution_info::ExecutionInfo {
+                    execution_info: Some(ExecutionInfo {
                         input_fetch_completed_timestamp: result.execution_metadata.worker_start_timestamp.unwrap_or(0),
                         execution_completed_timestamp: result.execution_metadata.worker_completed_timestamp.unwrap_or(0),
                         execution_worker: result.execution_metadata.worker_id,
@@ -286,7 +297,8 @@ impl CacheService for ReapiCacheService {
         &self,
         request: Request<UpdateActionResultRequest>,
     ) -> Result<Response<UpdateActionResultResponse>, Status> {
-        let proto_result = request.into_inner().action_result;
+        let proto_result = request.into_inner().action_result
+            .ok_or_else(|| Status::invalid_argument("missing action_result"))?;
 
         let result = ActionResult {
             output_files: HashMap::new(),
@@ -296,12 +308,16 @@ impl CacheService for ReapiCacheService {
             execution_metadata: ExecutionMetadata {
                 worker_id: proto_result.execution_info.as_ref().map(|ei| ei.execution_worker.clone()).unwrap_or_default(),
                 queued_timestamp: None,
-                worker_start_timestamp: proto_result.execution_info.as_ref().map(|ei| Some(ei.input_fetch_completed_timestamp)),
-                worker_completed_timestamp: proto_result.execution_info.as_ref().map(|ei| Some(ei.execution_completed_timestamp)),
+                worker_start_timestamp: proto_result.execution_info.as_ref().map(|ei| ei.input_fetch_completed_timestamp),
+                worker_completed_timestamp: proto_result.execution_info.as_ref().map(|ei| ei.execution_completed_timestamp),
             },
         };
 
-        self.put_cached_action_result(&proto_result.action_digest, &result)
+        let cache_key = Self::action_result_cache_key(&proto_result.action_digest);
+        let payload = serde_json::to_vec(&result)
+            .map_err(|e| Status::internal(format!("Failed to serialize: {}", e)))?;
+
+        self.cache.put(&cache_key, &payload)
             .await
             .map_err(|e| Status::internal(format!("Cache error: {}", e)))?;
 
@@ -391,7 +407,6 @@ impl CacheService for ReapiCacheService {
         &self,
         _request: Request<GetTreeRequest>,
     ) -> Result<Response<GetTreeResponse>, Status> {
-        // TODO: Implement directory tree traversal
         Err(Status::unimplemented("GetTree not implemented"))
     }
 }

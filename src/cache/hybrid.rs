@@ -1,6 +1,9 @@
 use crate::cache::remote::RemoteCache;
 use crate::cache::local::LocalCache;
+use crate::dashboard::BuildEvent;
+use crate::graph::BuildGraph;
 use anyhow::Result;
+use async_trait::async_trait;
 use std::sync::Arc;
 
 pub struct HybridCache {
@@ -125,6 +128,114 @@ impl HybridCache {
                     }
                 }
             });
+        }
+    }
+}
+
+fn layer_key(hash: &str) -> String {
+    format!("layer:{}", hash)
+}
+
+#[async_trait]
+impl RemoteCache for HybridCache {
+    async fn has(&self, hash: &str) -> Result<bool> {
+        if self.local.exists(hash) {
+            return Ok(true);
+        }
+        if let Some(ref remote) = self.remote {
+            if remote.get_node_layers(hash).await?.is_some() {
+                return Ok(true);
+            }
+            if remote.has(hash).await? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    async fn get(&self, hash: &str) -> Result<Option<Vec<u8>>> {
+        self.get_artifact(hash).await
+    }
+
+    async fn put(&self, hash: &str, data: &[u8]) -> Result<()> {
+        self.put_artifact(hash, data).await
+    }
+
+    async fn has_layer(&self, hash: &str) -> Result<bool> {
+        if self.local.exists(&layer_key(hash)) {
+            return Ok(true);
+        }
+        if let Some(ref remote) = self.remote {
+            if remote.has_layer(hash).await? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    async fn get_layer(&self, hash: &str) -> Result<Option<Vec<u8>>> {
+        if let Some(data) = self.local.get_data(&layer_key(hash))? {
+            return Ok(Some(data));
+        }
+        if let Some(ref remote) = self.remote {
+            if let Some(data) = remote.get_layer(hash).await? {
+                self.local.put(&layer_key(hash), &data)?;
+                return Ok(Some(data));
+            }
+        }
+        Ok(None)
+    }
+
+    async fn put_layer(&self, hash: &str, data: &[u8]) -> Result<()> {
+        self.local.put(&layer_key(hash), data)?;
+        if let Some(ref remote) = self.remote {
+            remote.put_layer(hash, data).await?;
+        }
+        Ok(())
+    }
+
+    async fn get_node_layers(&self, hash: &str) -> Result<Option<Vec<String>>> {
+        if let Some(ref remote) = self.remote {
+            remote.get_node_layers(hash).await
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn register_node_layers(
+        &self,
+        hash: &str,
+        layers: &[String],
+        total_size: u64,
+    ) -> Result<()> {
+        if let Some(ref remote) = self.remote {
+            remote.register_node_layers(hash, layers, total_size).await
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn report_build_event(&self, event: BuildEvent) -> Result<()> {
+        if let Some(ref remote) = self.remote {
+            remote.report_build_event(event).await
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn report_dag(&self, dag: &BuildGraph) -> Result<()> {
+        if let Some(ref remote) = self.remote {
+            remote.report_dag(dag).await
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn report_analytics(&self, dirty: u32, cached: u32, duration_ms: u64) -> Result<()> {
+        if let Some(ref remote) = self.remote {
+            remote.report_analytics(dirty, cached, duration_ms).await
+        } else {
+            Ok(())
         }
     }
 }
