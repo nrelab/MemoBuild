@@ -41,6 +41,8 @@ tonic = { version = "0.14", optional = true, features = ["transport"] }
 tonic-reflection = { version = "0.14", optional = true }
 prost = { version = "0.14", optional = true }
 prost-types = { version = "0.14", optional = true }
+tonic-prost = { version = "0.14", optional = true }
+tokio-stream = "0.1"
 parking_lot = "0.12"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt", "ansi"] }
@@ -81,8 +83,8 @@ protobuf-src = "2.1"
 [features]
 default = ["remote-exec"]
 server = []
-containerd = ["containerd-client", "tonic", "tonic-reflection", "prost", "prost-types"]
-remote-exec = ["tonic", "tonic-reflection", "prost", "prost-types"]
+containerd = ["containerd-client", "tonic", "tonic-reflection", "tonic-prost", "prost", "prost-types"]
+remote-exec = ["tonic", "tonic-reflection", "tonic-prost", "prost", "prost-types"]
 
 [dev-dependencies]
 criterion = "0.8.2"
