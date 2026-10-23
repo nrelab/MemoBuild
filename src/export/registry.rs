@@ -1,9 +1,10 @@
-use crate::export::manifest::OCIManifest;
+use std::fs;
+use std::path::Path;
+
 use anyhow::{Context, Result};
 use reqwest::blocking::Client;
 
-use std::fs;
-use std::path::Path;
+use crate::export::manifest::OCIManifest;
 
 pub struct RegistryClient {
     client: Client,
@@ -172,7 +173,7 @@ impl RegistryClient {
     fn upload_blob(&self, digest: &str, path: &Path) -> Result<()> {
         // Check if blob exists first (cross-repo mount or just skip)
         if self.blob_exists(digest)? {
-            println!("   (skip blob: {} already exists)", &status_hash(digest));
+            println!("   (skip blob: {} already exists)", status_hash(digest));
             return Ok(());
         }
 

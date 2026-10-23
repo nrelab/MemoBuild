@@ -3,13 +3,14 @@
 //! Provides a Redis-backed `RemoteCache` implementation for fast cache lookups
 //! before falling back to object storage. Configured via `MEMOBUILD_REDIS_URL`.
 
-use crate::dashboard::BuildEvent;
-use crate::graph::BuildGraph;
-use crate::remote_cache::RemoteCache;
 use anyhow::Result;
 use async_trait::async_trait;
 use fred::prelude::*;
 use fred::types::Scanner;
+
+use crate::dashboard::BuildEvent;
+use crate::graph::BuildGraph;
+use crate::remote_cache::RemoteCache;
 
 /// Redis-backed L1 distributed cache.
 ///
@@ -28,7 +29,7 @@ impl RedisCache {
         let config = RedisConfig::from_url(url)?;
         let client = RedisClient::new(config, None, None);
 
-        let _ = client.connect();
+        std::mem::drop(client.connect());
         client.wait_for_connect().await?;
 
         tracing::info!("Redis cache connected to {}", url);
@@ -63,13 +64,12 @@ impl RedisCache {
 #[async_trait]
 impl RemoteCache for RedisCache {
     async fn has(&self, hash: &str) -> Result<bool> {
-        let exists: bool = self.client.exists(&self.blob_key(hash)).await?;
+        let exists: bool = self.client.exists(self.blob_key(hash)).await?;
         Ok(exists)
     }
 
     async fn get(&self, hash: &str) -> Result<Option<Vec<u8>>> {
-        let data: Option<fred::types::RedisValue> =
-            self.client.get(&self.blob_key(hash)).await?;
+        let data: Option<fred::types::RedisValue> = self.client.get(self.blob_key(hash)).await?;
         match data {
             Some(val) => Ok(Some(val.convert::<Vec<u8>>()?)),
             None => Ok(None),
@@ -81,7 +81,13 @@ impl RemoteCache for RedisCache {
         if self.ttl_secs > 0 {
             let _: () = self
                 .client
-                .set(&key, data, Some(Expiration::EX(self.ttl_secs as i64)), None, false)
+                .set(
+                    &key,
+                    data,
+                    Some(Expiration::EX(self.ttl_secs as i64)),
+                    None,
+                    false,
+                )
                 .await?;
         } else {
             let _: () = self.client.set(&key, data, None, None, false).await?;
@@ -90,13 +96,12 @@ impl RemoteCache for RedisCache {
     }
 
     async fn has_layer(&self, hash: &str) -> Result<bool> {
-        let exists: bool = self.client.exists(&self.layer_key(hash)).await?;
+        let exists: bool = self.client.exists(self.layer_key(hash)).await?;
         Ok(exists)
     }
 
     async fn get_layer(&self, hash: &str) -> Result<Option<Vec<u8>>> {
-        let data: Option<fred::types::RedisValue> =
-            self.client.get(&self.layer_key(hash)).await?;
+        let data: Option<fred::types::RedisValue> = self.client.get(self.layer_key(hash)).await?;
         match data {
             Some(val) => Ok(Some(val.convert::<Vec<u8>>()?)),
             None => Ok(None),
@@ -108,7 +113,13 @@ impl RemoteCache for RedisCache {
         if self.ttl_secs > 0 {
             let _: () = self
                 .client
-                .set(&key, data, Some(Expiration::EX(self.ttl_secs as i64)), None, false)
+                .set(
+                    &key,
+                    data,
+                    Some(Expiration::EX(self.ttl_secs as i64)),
+                    None,
+                    false,
+                )
                 .await?;
         } else {
             let _: () = self.client.set(&key, data, None, None, false).await?;
@@ -117,7 +128,7 @@ impl RemoteCache for RedisCache {
     }
 
     async fn get_node_layers(&self, hash: &str) -> Result<Option<Vec<String>>> {
-        let val: Option<String> = self.client.get(&self.node_layers_key(hash)).await?;
+        let val: Option<String> = self.client.get(self.node_layers_key(hash)).await?;
         match val {
             Some(json_str) => {
                 let layers: Vec<String> = serde_json::from_str(&json_str)?;
@@ -138,10 +149,19 @@ impl RemoteCache for RedisCache {
         if self.ttl_secs > 0 {
             let _: () = self
                 .client
-                .set(&key, json.as_str(), Some(Expiration::EX(self.ttl_secs as i64)), None, false)
+                .set(
+                    &key,
+                    json.as_str(),
+                    Some(Expiration::EX(self.ttl_secs as i64)),
+                    None,
+                    false,
+                )
                 .await?;
         } else {
-            let _: () = self.client.set(&key, json.as_str(), None, None, false).await?;
+            let _: () = self
+                .client
+                .set(&key, json.as_str(), None, None, false)
+                .await?;
         }
         Ok(())
     }
@@ -161,9 +181,9 @@ impl RemoteCache for RedisCache {
 
 impl RedisCache {
     pub async fn evict(&self, hash: &str) -> Result<()> {
-        let _: () = self.client.del(&self.blob_key(hash)).await?;
-        let _: () = self.client.del(&self.layer_key(hash)).await?;
-        let _: () = self.client.del(&self.node_layers_key(hash)).await?;
+        let _: () = self.client.del(self.blob_key(hash)).await?;
+        let _: () = self.client.del(self.layer_key(hash)).await?;
+        let _: () = self.client.del(self.node_layers_key(hash)).await?;
         self.publish_evict(hash).await;
         Ok(())
     }
